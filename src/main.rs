@@ -1,3 +1,6 @@
+use ndarray::Array2;
+use rand::prelude::*;
+
 struct Species {
     id: u8,
     B0: f64,
@@ -17,7 +20,7 @@ struct Species {
 }
 
 struct Individual<'a> {
-    id: u8,
+    id: usize,
     species: &'a Species,
     x_coord: f64,
     y_coord: f64,
@@ -32,7 +35,7 @@ struct Individual<'a> {
 
 impl <'a> Individual<'a> {
 
-    pub fn new(id: u8, species: &'a Species, x_coord: f64, y_coord: f64) ->Self {
+    pub fn new(id: usize, species: &'a Species, x_coord: f64, y_coord: f64) ->Self {
         Individual {
             id: id,
             species: species,
@@ -70,11 +73,50 @@ impl <'a> Individual<'a> {
 }
 
 struct Population<'a> {
-    individuals: Vec<&'a Individual<'a>>
+    individuals: Vec<Individual<'a>>,
+    distances: Array2<f64>,
     // history
 }
 
-impl Population<'_> {
+impl <'a> Population<'a> {
+
+    fn new(&self, species_list: Vec<&'a Species>) -> Self {
+        
+        // create individuals for each species
+        let mut individuals: Vec<Individual> = vec![];
+        let mut idx = 0;
+        let mut rng = rand::thread_rng();
+        for species in species_list {
+            for _ in 0..(species.C1 as usize) {
+                let new_individual = Individual::new(
+                    idx,
+                    species,
+                    rng.gen(),
+                    rng.gen()
+                );
+                individuals.push(new_individual);
+                idx += 1;
+            }
+        }
+
+        // compute initial distance matrix
+        let mut distances = Array2::<f64>::ones((individuals.len(), individuals.len()));
+        for first in &individuals {
+            for seccond in &individuals {
+                if first.id != seccond.id {
+                    distances[[first.id, seccond.id]] = first.distance(&seccond);
+                }
+            }
+        }
+
+        // instantiate population
+        Population {
+            individuals: individuals,
+            distances: distances
+        }
+
+    }
+
     fn get_pairwise_distances() {
         // compute the pairwise distances for all individuals in the population
     }
