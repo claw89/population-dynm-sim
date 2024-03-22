@@ -1,4 +1,4 @@
-use ndarray::Array2;
+use ndarray::{Array, Array1, Array2, Axis};
 use rand::prelude::*;
 
 struct Species {
@@ -33,9 +33,8 @@ struct Individual<'a> {
     death_neighbor_weight: f64,
 }
 
-impl <'a> Individual<'a> {
-
-    pub fn new(id: usize, species: &'a Species, x_coord: f64, y_coord: f64) ->Self {
+impl<'a> Individual<'a> {
+    pub fn new(id: usize, species: &'a Species, x_coord: f64, y_coord: f64) -> Self {
         Individual {
             id: id,
             species: species,
@@ -62,7 +61,7 @@ impl <'a> Individual<'a> {
 
         (delta_x.powi(2) + delta_y.powi(2)).sqrt()
     }
-    
+
     pub fn update_probabilities(&mut self) {
         // Update individual birth, death, and move probabilities
 
@@ -74,26 +73,20 @@ impl <'a> Individual<'a> {
 
 struct Population<'a> {
     individuals: Vec<Individual<'a>>,
+    size: usize,
     distances: Array2<f64>,
     // history
 }
 
-impl <'a> Population<'a> {
-
+impl<'a> Population<'a> {
     fn new(&self, species_list: Vec<&'a Species>) -> Self {
-        
         // create individuals for each species
         let mut individuals: Vec<Individual> = vec![];
         let mut idx = 0;
         let mut rng = rand::thread_rng();
         for species in species_list {
             for _ in 0..(species.C1 as usize) {
-                let new_individual = Individual::new(
-                    idx,
-                    species,
-                    rng.gen(),
-                    rng.gen()
-                );
+                let new_individual = Individual::new(idx, species, rng.gen(), rng.gen());
                 individuals.push(new_individual);
                 idx += 1;
             }
@@ -112,17 +105,58 @@ impl <'a> Population<'a> {
         // instantiate population
         Population {
             individuals: individuals,
-            distances: distances
+            size: idx,
+            distances: distances,
         }
-
     }
 
     fn get_pairwise_distances() {
         // compute the pairwise distances for all individuals in the population
     }
 
-    fn update_neighbor_weights() {
+    fn update_neighbor_weights(&self) {
         // use the pairwise distances to update the individual neighbor weights
+
+        let Wbrmax_iter = self.individuals.iter().map(|x| x.species.Wbrmax);
+        let birth_r_max = Array::from_iter(Wbrmax_iter)
+            .into_shape((self.size, 1))
+            .unwrap();
+        let birth_neighbors: Array1<u32> = (&self.distances - &birth_r_max)
+            .map(|x| (*x < 0.0) as u32)
+            .sum_axis(Axis(1));
+
+        // let birth_std: Vec<f64> = self.individuals.iter().map(|x| x.species.Wbsd).collect();
+        // let birth_effect =  self.individuals.iter().map(|x| x.species.B1).collect();
+
+        // if event_type == "birth":
+        //     rmax = np.array([i.species.Wbrmax for i in self.individuals])
+        //     std = np.array([i.species.Wbsd for i in self.individuals])
+        //     effect_param = [i.species.B1 for i in self.individuals]
+        // elif event_type == "death":
+        //     rmax = np.array([i.species.Wdrmax for i in self.individuals])
+        //     std = np.array([i.species.Wdsd for i in self.individuals])
+        //     effect_param = [i.species.D1 for i in self.individuals]
+        // else:
+        //     raise ValueError
+
+        // neighbors = (pairwise_distances < rmax).sum(axis=1)
+
+        // var = std ** 2
+        // norm = np.where(var != 0, 2 * np.pi * var * (1 - np.exp(-rmax**2 / (2 * var))), 0)
+        // weights = np.where(
+        //     pairwise_distances < rmax,
+        //     np.where(var != 0, np.exp((-1 * pairwise_distances ** 2) / (2 * var)) / norm, 0),
+        //     0
+        // ).sum(axis=1) * effect_param
+
+        // if event_type == "birth":
+        //     for i, individual in enumerate(self.individuals):
+        //         individual.birth_neighbors = neighbors[i]
+        //         individual.birth_neighbor_weight = weights[i]
+        // elif event_type == "death":
+        //     for i, individual in enumerate(self.individuals):
+        //         individual.death_neighbors = neighbors[i]
+        //         individual.death_neighbor_weight = weights[i]
     }
 
     fn update_probabilities() {
@@ -149,7 +183,6 @@ impl <'a> Population<'a> {
         // somulate the behaviour of the population over time
     }
 }
-
 
 fn main() {
     println!("Hello world")
