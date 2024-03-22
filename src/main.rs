@@ -1,4 +1,4 @@
-
+use std::cmp;
 
 struct Species {
     id: u8,
@@ -50,8 +50,16 @@ impl <'a> Individual<'a> {
         }
     }
 
-    pub fn distance(&self, other: &Individual) {
+    pub fn distance(&self, other: &Individual) -> f64 {
         // Compute the Euclidean distance between the positions of two individuals
+
+        let inside_delta_x = (&self.x_coord - other.x_coord).abs();
+        let delta_x = inside_delta_x.min(1.0 - inside_delta_x);
+
+        let inside_delta_y = (&self.y_coord - other.y_coord).abs();
+        let delta_y = inside_delta_y.min(1.0 - inside_delta_y);
+
+        (delta_x.powi(2) + delta_y.powi(2)).sqrt()
     }
     
     pub fn update_probabilities() {
