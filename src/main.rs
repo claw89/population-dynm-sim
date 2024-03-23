@@ -1,5 +1,6 @@
 use ndarray::{Array, Array1, Array2, Axis};
 use rand::prelude::*;
+use std::f64::consts::PI;
 
 struct Species {
     id: u8,
@@ -27,8 +28,8 @@ struct Individual<'a> {
     p_birth: f64,
     p_death: f64,
     p_move: f64,
-    birth_neighbors: u32,
-    death_neighbors: u32,
+    // birth_neighbors: u32,
+    // death_neighbors: u32,
     birth_neighbor_weight: f64,
     death_neighbor_weight: f64,
 }
@@ -43,8 +44,8 @@ impl<'a> Individual<'a> {
             p_birth: 0.0,
             p_death: 0.0,
             p_move: 0.0,
-            birth_neighbors: 0,
-            death_neighbors: 0,
+            // birth_neighbors: 0,
+            // death_neighbors: 0,
             birth_neighbor_weight: 0.0,
             death_neighbor_weight: 0.0,
         }
@@ -110,53 +111,54 @@ impl<'a> Population<'a> {
         }
     }
 
-    fn get_pairwise_distances() {
-        // compute the pairwise distances for all individuals in the population
-    }
-
-    fn update_neighbor_weights(&self) {
+    fn update_birth_neighbor_weights(&mut self) {
         // use the pairwise distances to update the individual neighbor weights
 
-        let Wbrmax_iter = self.individuals.iter().map(|x| x.species.Wbrmax);
-        let birth_r_max = Array::from_iter(Wbrmax_iter)
+        let birth_radius = Array::from_iter(self.individuals.iter().map(|x| x.species.Wbrmax))
             .into_shape((self.size, 1))
             .unwrap();
-        let birth_neighbors: Array1<u32> = (&self.distances - &birth_r_max)
-            .map(|x| (*x < 0.0) as u32)
-            .sum_axis(Axis(1));
+        let birth_mask = (&self.distances - &birth_radius).map(|x| *x < 0.0);
 
-        // let birth_std: Vec<f64> = self.individuals.iter().map(|x| x.species.Wbsd).collect();
-        // let birth_effect =  self.individuals.iter().map(|x| x.species.B1).collect();
+        // let birth_neighbors: Array1<u32> = birth_mask.map(|x| *x as u32).sum_axis(Axis(1));
 
-        // if event_type == "birth":
-        //     rmax = np.array([i.species.Wbrmax for i in self.individuals])
-        //     std = np.array([i.species.Wbsd for i in self.individuals])
-        //     effect_param = [i.species.B1 for i in self.individuals]
-        // elif event_type == "death":
-        //     rmax = np.array([i.species.Wdrmax for i in self.individuals])
-        //     std = np.array([i.species.Wdsd for i in self.individuals])
-        //     effect_param = [i.species.D1 for i in self.individuals]
-        // else:
-        //     raise ValueError
+        let birth_var = Array::from_iter(self.individuals.iter().map(|x| x.species.Wbsd.powi(2)));
+        let birth_effect = self.individuals.iter().map(|x| x.species.B1);
 
-        // neighbors = (pairwise_distances < rmax).sum(axis=1)
+        let birth_norm = Array::from_iter(birth_radius.iter().zip(birth_var.iter()).map(
+            |(r, v)| -> f64 {
+                if *v == 0.0 {
+                    0.0
+                } else {
+                    2.0 * v * PI * (1.0 - ((-1.0 * r.powi(2)) / (2.0 * v)).exp())
+                }
+            },
+        ));
 
-        // var = std ** 2
-        // norm = np.where(var != 0, 2 * np.pi * var * (1 - np.exp(-rmax**2 / (2 * var))), 0)
-        // weights = np.where(
-        //     pairwise_distances < rmax,
-        //     np.where(var != 0, np.exp((-1 * pairwise_distances ** 2) / (2 * var)) / norm, 0),
-        //     0
-        // ).sum(axis=1) * effect_param
+        let birth_weight = Array::from_iter(
+            Array::from_iter(
+                self.distances
+                    .iter()
+                    .zip(birth_var.iter())
+                    .zip(birth_norm.iter())
+                    .zip(birth_mask.iter())
+                    .into_iter()
+                    .map(|(((d, v), n), m)| -> f64 {
+                        if *v == 0.0 || *n == 0.0 || *m == false {
+                            0.0
+                        } else {
+                            ((-1.0 * d.powi(2)) / (2.0 * v)).exp() / n
+                        }
+                    }),
+            )
+            .sum_axis(Axis(1))
+            .into_iter()
+            .zip(birth_effect)
+            .map(|(w, e)| w * e),
+        );
 
-        // if event_type == "birth":
-        //     for i, individual in enumerate(self.individuals):
-        //         individual.birth_neighbors = neighbors[i]
-        //         individual.birth_neighbor_weight = weights[i]
-        // elif event_type == "death":
-        //     for i, individual in enumerate(self.individuals):
-        //         individual.death_neighbors = neighbors[i]
-        //         individual.death_neighbor_weight = weights[i]
+        for (w, i) in birth_weight.iter().zip(self.individuals.iter_mut()) {
+            i.birth_neighbor_weight = *w;
+        }
     }
 
     fn update_probabilities() {
