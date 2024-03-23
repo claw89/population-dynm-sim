@@ -161,8 +161,11 @@ impl<'a> Population<'a> {
         }
     }
 
-    fn update_probabilities() {
+    fn update_probabilities(&mut self) {
         // update birth, death, and move probabilities
+        for mut individual in self.individuals.iter() {
+            individual.update_probabilities();
+        }
     }
 
     fn execute_birth() {
