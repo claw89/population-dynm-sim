@@ -9,7 +9,7 @@ enum Event {
 }
 
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 struct Species {
     id: u8,
     B0: f64,
@@ -249,6 +249,39 @@ impl<'a> Population<'a> {
     }
 }
 
-fn main() {
-    println!("Hello world")
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::{rstest, fixture};
+
+    #[fixture]
+    fn default_species() -> Species {
+        Species {
+            id: 0,
+            B0: 0.0,
+            B1: 0.0,
+            C1: 0.0,
+            D0: 0.0,
+            D1: 0.0,
+            Mbrmax: 0.0,
+            Mbsd: 0.0,
+            Mintegral: 0.0,
+            Mrmax: 0.0,
+            Msd: 0.0,
+            Wbrmax: 0.0,
+            Wbsd: 0.0,
+            Wdrmax: 0.0,
+            Wdsd: 0.0,
+        }
+    }
+
+    #[rstest]
+    fn test_new_individual(default_species: Species) {
+        let individual = Individual::new(0, &default_species, 0.0, 0.0);
+        assert_eq!(individual.id, 0);
+        assert_eq!(individual.species, &default_species);
+        assert_eq!(individual.x_coord, 0.0);
+        assert_eq!(individual.y_coord, 0.0);
+    }
 }
