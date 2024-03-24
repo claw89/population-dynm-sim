@@ -8,6 +8,8 @@ enum Event {
     Move,
 }
 
+
+#[derive(PartialEq)]
 struct Species {
     id: u8,
     B0: f64,
@@ -26,6 +28,7 @@ struct Species {
     Wdsd: f64,
 }
 
+#[derive(PartialEq)]
 struct Individual<'a> {
     id: usize,
     species: &'a Species,
@@ -108,8 +111,6 @@ impl<'a> Population<'a> {
                 }
             }
         }
-
-        // TODO create id -> distance index mapping
 
         // instantiate population
         Population {
@@ -221,15 +222,18 @@ impl<'a> Population<'a> {
             .assign(&child_distances);
         self.distances = updated_distances;
 
-        // TODO update id -> distance index mapping
-
         // add child to vector of individuals
         self.individuals.push(child);
         self.size += 1;
     }
 
-    fn execute_death() {
+    fn execute_death(&mut self, deceased: &Individual) {
         // remove an individual from the population
+        let deceased_id = self.individuals.iter().position(|x| x == deceased).unwrap();
+        self.distances.remove_index(Axis(0), deceased_id);
+        self.distances.remove_index(Axis(1), deceased_id);
+        self.individuals.remove(deceased_id);
+        self.size -= 1;
     }
 
     fn execute_move() {
