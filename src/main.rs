@@ -1,4 +1,4 @@
-use ndarray::{Array, Array1, Array2, Axis};
+use ndarray::{s, Array, Array2, Axis};
 use rand::prelude::*;
 use std::f64::consts::PI;
 
@@ -109,6 +109,8 @@ impl<'a> Population<'a> {
             }
         }
 
+        // TODO create id -> distance index mapping
+
         // instantiate population
         Population {
             individuals: individuals,
@@ -191,8 +193,39 @@ impl<'a> Population<'a> {
         }
     }
 
-    fn execute_birth() {
+    fn execute_birth(&mut self, parent: &Individual<'a>) {
         // create a new invidual
+
+        // TODO initialise child position from parent
+        let child_x_coord = 0.0;
+        let child_y_coord = 0.0;
+
+        let max_id = self.individuals.iter().map(|x| x.id).max().unwrap();
+        let child = Individual::new(max_id + 1, parent.species, child_x_coord, child_y_coord);
+
+        // update pairwise distance matrix
+        let mut updated_distances = Array2::<f64>::ones((self.size + 1, self.size + 1));
+        let child_distances = Array::from_iter(
+            self.individuals
+                .iter()
+                .map(|i| -> f64 { i.distance(&child) }),
+        );
+        updated_distances
+            .slice_mut(s![0..-1, 0..-1])
+            .assign(&self.distances);
+        updated_distances
+            .slice_mut(s![-1, 0..-1])
+            .assign(&child_distances);
+        updated_distances
+            .slice_mut(s![0..-1, -1])
+            .assign(&child_distances);
+        self.distances = updated_distances;
+
+        // TODO update id -> distance index mapping
+
+        // add child to vector of individuals
+        self.individuals.push(child);
+        self.size += 1;
     }
 
     fn execute_death() {
