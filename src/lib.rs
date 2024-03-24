@@ -1,8 +1,9 @@
 use ndarray::{s, Array, Array2, Axis};
 use rand::prelude::*;
-use rand_distr::Normal;
+use rand_distr::{Normal, WeightedIndex};
 use std::f64::consts::PI;
 
+#[derive(Clone, Copy)]
 enum Event {
     Birth,
     Death,
@@ -29,7 +30,7 @@ struct Species {
     Wdsd: f64,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 struct Individual<'a> {
     id: usize,
     species: &'a Species,
@@ -246,8 +247,35 @@ impl<'a> Population<'a> {
         // move an individual within the population
     }
 
-    fn choose_event() {
+    fn choose_event(&self) -> (Event, Individual, f64) {
         // pick the event type and individual at random from the poopulation
+        let p_birth_sum = self.individuals.iter().fold(0.0, |acc, x| acc + x.p_birth);
+        let p_death_sum = self.individuals.iter().fold(0.0, |acc, x| acc + x.p_death);
+        let p_move_sum = self.individuals.iter().fold(0.0, |acc, x| acc + x.p_move);
+        let p_total = p_birth_sum + p_death_sum + p_move_sum;
+
+        let mut rng = rand::thread_rng();
+
+        let choices = vec![Event::Birth, Event::Death, Event::Death];
+        let weights = vec![p_birth_sum / p_total, p_death_sum / p_total, p_move_sum / p_total];
+        let chosen_event = weighted_sample(&choices, weights, &mut rng);
+
+        let chosen_individual = match chosen_event {
+            Event::Birth => {
+                let weights = self.individuals.iter().map(|x| x.p_birth / p_birth_sum).collect();
+                weighted_sample(&self.individuals, weights, &mut rng)
+            },
+            Event::Death => {
+                let weights = self.individuals.iter().map(|x| x.p_death / p_death_sum).collect();
+                weighted_sample(&self.individuals, weights, &mut rng)
+            },
+            Event::Move => {
+                let weights = self.individuals.iter().map(|x| x.p_move / p_move_sum).collect();
+                weighted_sample(&self.individuals, weights, &mut rng)
+            },
+        };
+
+        (chosen_event, chosen_individual, p_total)
     }
 
     pub fn simulate() {
@@ -255,6 +283,11 @@ impl<'a> Population<'a> {
     }
 }
 
+
+fn weighted_sample<T>(choices: &Vec<T>, weights: Vec<f64>, rng: &mut ThreadRng)-> T  where T: Copy {
+    let dist = WeightedIndex::new(&weights).unwrap();
+    choices[dist.sample(rng)]
+}
 
 #[cfg(test)]
 mod tests {
