@@ -1,5 +1,6 @@
 use ndarray::{s, Array, Array2, Axis};
 use rand::prelude::*;
+use rand_distr::Normal;
 use std::f64::consts::PI;
 
 enum Event {
@@ -197,9 +198,14 @@ impl<'a> Population<'a> {
     fn execute_birth(&mut self, parent: &Individual<'a>) {
         // create a new invidual
 
-        // TODO initialise child position from parent
-        let child_x_coord = 0.0;
-        let child_y_coord = 0.0;
+        // initialise child position from parent with Gaussian kernel
+        let mut rng = rand::thread_rng();
+        let child_x_coord = Normal::new(parent.x_coord, parent.species.Mbsd)
+            .unwrap()
+            .sample(&mut rng);
+        let child_y_coord = Normal::new(parent.y_coord, parent.species.Mbsd)
+            .unwrap()
+            .sample(&mut rng);
 
         let max_id = self.individuals.iter().map(|x| x.id).max().unwrap();
         let child = Individual::new(max_id + 1, parent.species, child_x_coord, child_y_coord);
