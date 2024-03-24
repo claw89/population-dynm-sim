@@ -10,7 +10,6 @@ enum Event {
     Move,
 }
 
-
 #[derive(PartialEq, Debug)]
 struct Species {
     id: u8,
@@ -91,7 +90,7 @@ struct Population<'a> {
 }
 
 impl<'a> Population<'a> {
-    fn new(&self, species_list: Vec<&'a Species>) -> Self {
+    pub fn new(&self, species_list: Vec<&'a Species>) -> Self {
         // create individuals for each species
         let mut individuals: Vec<Individual> = vec![];
         let mut idx = 0;
@@ -122,7 +121,7 @@ impl<'a> Population<'a> {
         }
     }
 
-    fn update_neighbor_weights(&mut self, event: Event) {
+    fn update_neighbor_weights<'b>(&'b mut self, event: Event) {
         // use the pairwise distances to update the individual neighbor weights
 
         let radius = Array::from_iter(self.individuals.iter().map(|x| -> f64 {
@@ -189,15 +188,16 @@ impl<'a> Population<'a> {
         }
     }
 
-    fn update_probabilities(&mut self) {
+    fn update_probabilities<'b>(&'b mut self) {
         // update birth, death, and move probabilities
         for mut individual in self.individuals.iter_mut() {
             individual.update_probabilities();
         }
     }
 
-    fn execute_birth(&mut self, parent: &Individual<'a>) {
+    fn execute_birth<'b>(&'b mut self, parent_id: usize) {
         // create a new invidual
+        let parent = self.individuals[parent_id];
 
         // initialise child position from parent with Gaussian kernel
         let mut rng = rand::thread_rng();
@@ -234,20 +234,19 @@ impl<'a> Population<'a> {
         self.size += 1;
     }
 
-    fn execute_death(&mut self, deceased: &Individual) {
+    fn execute_death<'b>(&'b mut self, deceased_id: usize) {
         // remove an individual from the population
-        let deceased_id = self.individuals.iter().position(|x| x == deceased).unwrap();
         self.distances.remove_index(Axis(0), deceased_id);
         self.distances.remove_index(Axis(1), deceased_id);
         self.individuals.remove(deceased_id);
         self.size -= 1;
     }
 
-    fn execute_move() {
+    fn execute_move<'b>(&'b mut self) {
         // move an individual within the population
     }
 
-    fn choose_event(&self) -> (Event, Individual, f64) {
+    fn choose_event(&self) -> (Event, usize, f64) {
         // pick the event type and individual at random from the poopulation
         let p_birth_sum = self.individuals.iter().fold(0.0, |acc, x| acc + x.p_birth);
         let p_death_sum = self.individuals.iter().fold(0.0, |acc, x| acc + x.p_death);
@@ -257,42 +256,84 @@ impl<'a> Population<'a> {
         let mut rng = rand::thread_rng();
 
         let choices = vec![Event::Birth, Event::Death, Event::Death];
-        let weights = vec![p_birth_sum / p_total, p_death_sum / p_total, p_move_sum / p_total];
-        let chosen_event = weighted_sample(&choices, weights, &mut rng);
+        let weights = vec![
+            p_birth_sum / p_total,
+            p_death_sum / p_total,
+            p_move_sum / p_total,
+        ];
+        let chosen_event = weighted_sample(&choices, &weights, &mut rng);
 
         let chosen_individual = match chosen_event {
             Event::Birth => {
-                let weights = self.individuals.iter().map(|x| x.p_birth / p_birth_sum).collect();
-                weighted_sample(&self.individuals, weights, &mut rng)
-            },
+                let weights = self
+                    .individuals
+                    .iter()
+                    .map(|x| x.p_birth / p_birth_sum)
+                    .collect();
+                weighted_sample(&self.individuals, &weights, &mut rng)
+            }
             Event::Death => {
-                let weights = self.individuals.iter().map(|x| x.p_death / p_death_sum).collect();
-                weighted_sample(&self.individuals, weights, &mut rng)
-            },
+                let weights = self
+                    .individuals
+                    .iter()
+                    .map(|x| x.p_death / p_death_sum)
+                    .collect();
+                weighted_sample(&self.individuals, &weights, &mut rng)
+            }
             Event::Move => {
-                let weights = self.individuals.iter().map(|x| x.p_move / p_move_sum).collect();
-                weighted_sample(&self.individuals, weights, &mut rng)
-            },
+                let weights = self
+                    .individuals
+                    .iter()
+                    .map(|x| x.p_move / p_move_sum)
+                    .collect();
+                weighted_sample(&self.individuals, &weights, &mut rng)
+            }
         };
+        let chosen_individual_id = self
+            .individuals
+            .iter()
+            .position(|&x| x == chosen_individual)
+            .unwrap();
 
-        (chosen_event, chosen_individual, p_total)
+        (chosen_event, chosen_individual_id, p_total)
     }
 
-    pub fn simulate() {
+    pub fn simulate(&'a mut self, max_t: f64) {
         // somulate the behaviour of the population over time
+        let mut t: f64 = 0.0;
+        let mut rng = rand::thread_rng();
+
+        while t < max_t {
+            for event in [Event::Birth, Event::Death] {
+                self.update_neighbor_weights(event);
+            }
+            self.update_probabilities();
+
+            let (chosen_event, chosen_individual_id, p_total) = self.choose_event();
+            match chosen_event {
+                Event::Birth => self.execute_birth(chosen_individual_id),
+                Event::Death => self.execute_death(chosen_individual_id),
+                Event::Move => self.execute_move(),
+            }
+            let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
+            assert!(delta_t > 0.0);
+            t += delta_t;
+        }
     }
 }
 
-
-fn weighted_sample<T>(choices: &Vec<T>, weights: Vec<f64>, rng: &mut ThreadRng)-> T  where T: Copy {
-    let dist = WeightedIndex::new(&weights).unwrap();
+fn weighted_sample<T>(choices: &Vec<T>, weights: &Vec<f64>, rng: &mut ThreadRng) -> T
+where
+    T: Copy,
+{
+    let dist = WeightedIndex::new(weights).unwrap();
     choices[dist.sample(rng)]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::{rstest, fixture};
+    use rstest::{fixture, rstest};
 
     #[fixture]
     fn default_species() -> Species {
