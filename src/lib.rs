@@ -2,6 +2,7 @@ use ndarray::{s, Array, Array2, Axis};
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use std::f64::consts::PI;
+use indicatif::ProgressBar;
 
 #[derive(Clone, Copy)]
 enum Event {
@@ -157,23 +158,26 @@ impl<'a> Population<'a> {
             }
         }));
 
-        let weight = Array::from_iter(
-            Array::from_iter(
-                self.distances
-                    .iter()
-                    .zip(var.iter())
-                    .zip(norm.iter())
-                    .zip(mask.iter())
-                    .into_iter()
-                    .map(|(((d, v), n), m)| -> f64 {
-                        if *v == 0.0 || *n == 0.0 || *m == false {
-                            0.0
-                        } else {
-                            ((-1.0 * d.powi(2)) / (2.0 * v)).exp() / n
-                        }
-                    }),
-            )
-            .sum_axis(Axis(1))
+        let norm2d = norm.broadcast(mask.dim()).unwrap().to_owned();
+        let var2d = var.broadcast(mask.dim()).unwrap().to_owned();
+
+        let weight_full = Array::from_iter(self.distances
+        .iter()
+        .zip(var2d.iter())
+        .zip(norm2d.iter())
+        .zip(mask.iter())
+        .into_iter()
+        .map(|(((d, v), n), m)| -> f64 {
+            if *v == 0.0 || *n == 0.0 || *m == false {
+                0.0
+            } else {
+                ((-1.0 * d.powi(2)) / (2.0 * v)).exp() / n
+            }
+        })).into_shape(mask.dim()).unwrap();
+
+        let row_sum = weight_full.sum_axis(Axis(1));
+
+        let weight = Array::from_iter(row_sum
             .into_iter()
             .zip(effect)
             .map(|(w, e)| w * e),
@@ -302,6 +306,7 @@ impl<'a> Population<'a> {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
         let mut rng = rand::thread_rng();
+        let prog = ProgressBar::new(max_t as u64);
 
         while t < max_t {
             for event in [Event::Birth, Event::Death] {
@@ -318,6 +323,9 @@ impl<'a> Population<'a> {
             let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
             assert!(delta_t > 0.0);
             t += delta_t;
+            if t as u64 > prog.position() + 1 {
+                prog.inc(1);
+            }
         }
     }
 }
