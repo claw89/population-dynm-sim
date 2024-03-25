@@ -11,22 +11,22 @@ enum Event {
 }
 
 #[derive(PartialEq, Debug)]
-struct Species {
-    id: u8,
-    B0: f64,
-    B1: f64,
-    C1: f64,
-    D0: f64,
-    D1: f64,
-    Mbrmax: f64,
-    Mbsd: f64,
-    Mintegral: f64,
-    Mrmax: f64,
-    Msd: f64,
-    Wbrmax: f64,
-    Wbsd: f64,
-    Wdrmax: f64,
-    Wdsd: f64,
+pub struct Species {
+    pub id: u8,
+    pub B0: f64,
+    pub B1: f64,
+    pub C1: f64,
+    pub D0: f64,
+    pub D1: f64,
+    pub Mbrmax: f64,
+    pub Mbsd: f64,
+    pub Mintegral: f64,
+    pub Mrmax: f64,
+    pub Msd: f64,
+    pub Wbrmax: f64,
+    pub Wbsd: f64,
+    pub Wdrmax: f64,
+    pub Wdsd: f64,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -82,7 +82,7 @@ impl<'a> Individual<'a> {
     }
 }
 
-struct Population<'a> {
+pub struct Population<'a> {
     individuals: Vec<Individual<'a>>,
     size: usize,
     distances: Array2<f64>,
@@ -90,7 +90,7 @@ struct Population<'a> {
 }
 
 impl<'a> Population<'a> {
-    pub fn new(&self, species_list: Vec<&'a Species>) -> Self {
+    pub fn new(species_list: Vec<&'a Species>) -> Self {
         // create individuals for each species
         let mut individuals: Vec<Individual> = vec![];
         let mut idx = 0;
