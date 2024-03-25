@@ -7,7 +7,10 @@ edition = "2021"
 
 [dependencies]
 indicatif = "0.17.8"
+itertools = "0.12.1"
 ndarray = "0.15.6"
 rand = "0.8.5"
 rand_distr = "0.4.3"
 rstest = "0.18.2"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"

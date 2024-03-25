@@ -3,6 +3,11 @@ use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use std::f64::consts::PI;
 use indicatif::ProgressBar;
+use itertools::multiunzip;
+use serde::{Serialize, Deserialize};
+use serde_json;
+use std::fs::File;
+use std::io::prelude::*;
 
 #[derive(Clone, Copy)]
 enum Event {
@@ -13,7 +18,7 @@ enum Event {
 
 #[derive(PartialEq, Debug)]
 pub struct Species {
-    pub id: u8,
+    pub id: usize,
     pub B0: f64,
     pub B1: f64,
     pub C1: f64,
@@ -83,11 +88,24 @@ impl<'a> Individual<'a> {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct Checkpoint {
+    time: f64,
+    species_ids: Vec<usize>,
+    x_coords: Vec<f64>,
+    y_coords: Vec<f64>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct History {
+    checkpoints: Vec<Checkpoint>
+}
+
 pub struct Population<'a> {
     individuals: Vec<Individual<'a>>,
     size: usize,
     distances: Array2<f64>,
-    // history
+    history: History,
 }
 
 impl<'a> Population<'a> {
@@ -114,11 +132,24 @@ impl<'a> Population<'a> {
             }
         }
 
+        // initialise history
+        let history_vec: Vec<(usize, f64, f64)> = individuals.iter().map(|x| (x.species.id, x.x_coord, x.y_coord)).collect();
+        let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
+        let initial_checkpoint = Checkpoint {
+            time: 0.0,
+            species_ids,
+            x_coords,
+            y_coords,
+        };
+
         // instantiate population
         Population {
             individuals: individuals,
             size: idx,
             distances: distances,
+            history: History {
+                checkpoints: vec![initial_checkpoint]
+            },
         }
     }
 
@@ -302,6 +333,17 @@ impl<'a> Population<'a> {
         (chosen_event, chosen_individual_id, p_total)
     }
 
+    fn get_checkpoint(&self, time: f64) -> Checkpoint {
+        let history_vec: Vec<(usize, f64, f64)> = self.individuals.iter().map(|x| (x.species.id, x.x_coord, x.y_coord)).collect();
+        let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
+        Checkpoint {
+            time,
+            species_ids,
+            x_coords,
+            y_coords,
+        }
+    }
+
     pub fn simulate(&'a mut self, max_t: f64) {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
@@ -320,6 +362,8 @@ impl<'a> Population<'a> {
                 Event::Death => self.execute_death(chosen_individual_id),
                 Event::Move => self.execute_move(),
             }
+            let next_checkpoint = self.get_checkpoint(t);
+            self.history.checkpoints.push(next_checkpoint);
             let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
             assert!(delta_t > 0.0);
             t += delta_t;
@@ -327,6 +371,13 @@ impl<'a> Population<'a> {
                 prog.inc(1);
             }
         }
+        self.save_history();
+        println!("Completed with {:?} steps", self.history.checkpoints.len());
+    }
+
+    pub fn save_history(&self) {
+        let mut file = File::create("data/history.json").unwrap();
+        file.write_all(serde_json::to_string(&self.history.checkpoints).unwrap().as_bytes());
     }
 }
 

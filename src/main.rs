@@ -20,5 +20,5 @@ fn main() {
     };
 
     let mut population = Population::new(vec![&species]);
-    population.simulate(101.0);
+    population.simulate(21.0);
 }
