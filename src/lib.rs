@@ -1,11 +1,11 @@
+use indicatif::ProgressBar;
+use itertools::multiunzip;
 use ndarray::{s, Array, Array2, Axis};
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
-use std::f64::consts::PI;
-use indicatif::ProgressBar;
-use itertools::multiunzip;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json;
+use std::f64::consts::PI;
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -13,26 +13,26 @@ use std::io::prelude::*;
 enum Event {
     Birth,
     Death,
-    Move,
+    // Move,
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Species {
     pub id: usize,
-    pub B0: f64,
-    pub B1: f64,
-    pub C1: f64,
-    pub D0: f64,
-    pub D1: f64,
-    pub Mbrmax: f64,
-    pub Mbsd: f64,
-    pub Mintegral: f64,
-    pub Mrmax: f64,
-    pub Msd: f64,
-    pub Wbrmax: f64,
-    pub Wbsd: f64,
-    pub Wdrmax: f64,
-    pub Wdsd: f64,
+    pub b0: f64,
+    pub b1: f64,
+    pub c1: f64,
+    pub d0: f64,
+    pub d1: f64,
+    pub mbrmax: f64,
+    pub mbsd: f64,
+    pub mintegral: f64,
+    pub move_radius_max: f64,
+    pub move_std: f64,
+    pub birth_radius_max: f64,
+    pub birth_std: f64,
+    pub death_radius_max: f64,
+    pub death_std: f64,
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -82,9 +82,9 @@ impl Individual {
     pub fn update_probabilities(&mut self) {
         // Update individual birth, death, and move probabilities
 
-        self.p_birth = self.species.B0 + self.birth_neighbor_weight;
-        self.p_death = self.species.D0 + self.death_neighbor_weight;
-        self.p_move = self.species.Mintegral;
+        self.p_birth = self.species.b0 + self.birth_neighbor_weight;
+        self.p_death = self.species.d0 + self.death_neighbor_weight;
+        self.p_move = self.species.mintegral;
     }
 }
 
@@ -98,7 +98,7 @@ struct Checkpoint {
 
 #[derive(Serialize, Deserialize)]
 struct History {
-    checkpoints: Vec<Checkpoint>
+    checkpoints: Vec<Checkpoint>,
 }
 
 pub struct Population {
@@ -115,7 +115,7 @@ impl Population {
         let mut idx = 0;
         let mut rng = rand::thread_rng();
         for species in species_list {
-            for _ in 0..(species.C1 as usize) {
+            for _ in 0..(species.c1 as usize) {
                 let new_individual = Individual::new(idx, species.clone(), rng.gen(), rng.gen());
                 individuals.push(new_individual);
                 idx += 1;
@@ -133,7 +133,10 @@ impl Population {
         }
 
         // initialise history
-        let history_vec: Vec<(usize, f64, f64)> = individuals.iter().map(|x| (x.species.id, x.x_coord, x.y_coord)).collect();
+        let history_vec: Vec<(usize, f64, f64)> = individuals
+            .iter()
+            .map(|x| (x.species.id, x.x_coord, x.y_coord))
+            .collect();
         let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         let initial_checkpoint = Checkpoint {
             time: 0.0,
@@ -148,7 +151,7 @@ impl Population {
             size: idx,
             distances: distances,
             history: History {
-                checkpoints: vec![initial_checkpoint]
+                checkpoints: vec![initial_checkpoint],
             },
         }
     }
@@ -158,9 +161,9 @@ impl Population {
 
         let radius = Array::from_iter(self.individuals.iter().map(|x| -> f64 {
             match event {
-                Event::Birth => x.species.Wbrmax,
-                Event::Death => x.species.Wdrmax,
-                Event::Move => 0.0, // TODO
+                Event::Birth => x.species.birth_radius_max,
+                Event::Death => x.species.death_radius_max,
+                // Event::Move => 0.0, // TODO
             }
         }))
         .into_shape((self.size, 1))
@@ -168,16 +171,16 @@ impl Population {
         let mask = (&self.distances - &radius).map(|x| *x < 0.0);
         let var = Array::from_iter(self.individuals.iter().map(|x| -> f64 {
             match event {
-                Event::Birth => x.species.Wbsd.powi(2),
-                Event::Death => x.species.Wdsd.powi(2),
-                Event::Move => 0.0, // TODO
+                Event::Birth => x.species.birth_std.powi(2),
+                Event::Death => x.species.death_std.powi(2),
+                // Event::Move => 0.0, // TODO
             }
         }));
         let effect = self.individuals.iter().map(|x| -> f64 {
             match event {
-                Event::Birth => x.species.B1,
-                Event::Death => x.species.D1,
-                Event::Move => 0.0, // TODO
+                Event::Birth => x.species.b1,
+                Event::Death => x.species.d1,
+                // Event::Move => 0.0, // TODO
             }
         });
 
@@ -192,40 +195,40 @@ impl Population {
         let norm2d = norm.broadcast(mask.dim()).unwrap().to_owned();
         let var2d = var.broadcast(mask.dim()).unwrap().to_owned();
 
-        let weight_full = Array::from_iter(self.distances
-        .iter()
-        .zip(var2d.iter())
-        .zip(norm2d.iter())
-        .zip(mask.iter())
-        .into_iter()
-        .map(|(((d, v), n), m)| -> f64 {
-            if *v == 0.0 || *n == 0.0 || *m == false {
-                0.0
-            } else {
-                ((-1.0 * d.powi(2)) / (2.0 * v)).exp() / n
-            }
-        })).into_shape(mask.dim()).unwrap();
+        let weight_full = Array::from_iter(
+            self.distances
+                .iter()
+                .zip(var2d.iter())
+                .zip(norm2d.iter())
+                .zip(mask.iter())
+                .into_iter()
+                .map(|(((d, v), n), m)| -> f64 {
+                    if *v == 0.0 || *n == 0.0 || *m == false {
+                        0.0
+                    } else {
+                        ((-1.0 * d.powi(2)) / (2.0 * v)).exp() / n
+                    }
+                }),
+        )
+        .into_shape(mask.dim())
+        .unwrap();
 
         let row_sum = weight_full.sum_axis(Axis(1));
 
-        let weight = Array::from_iter(row_sum
-            .into_iter()
-            .zip(effect)
-            .map(|(w, e)| w * e),
-        );
+        let weight = Array::from_iter(row_sum.into_iter().zip(effect).map(|(w, e)| w * e));
 
         for (w, i) in weight.iter().zip(self.individuals.iter_mut()) {
             match event {
                 Event::Birth => i.birth_neighbor_weight = *w,
                 Event::Death => i.death_neighbor_weight = *w,
-                Event::Move => (), // TODO
+                // Event::Move => (), // TODO
             }
         }
     }
 
     fn update_probabilities<'b>(&'b mut self) {
         // update birth, death, and move probabilities
-        for mut individual in self.individuals.iter_mut() {
+        for individual in self.individuals.iter_mut() {
             individual.update_probabilities();
         }
     }
@@ -236,10 +239,10 @@ impl Population {
 
         // initialise child position from parent with Gaussian kernel
         let mut rng = rand::thread_rng();
-        let child_x_coord = Normal::new(parent.x_coord, parent.species.Mbsd)
+        let child_x_coord = Normal::new(parent.x_coord, parent.species.mbsd)
             .unwrap()
             .sample(&mut rng);
-        let child_y_coord = Normal::new(parent.y_coord, parent.species.Mbsd)
+        let child_y_coord = Normal::new(parent.y_coord, parent.species.mbsd)
             .unwrap()
             .sample(&mut rng);
 
@@ -277,9 +280,9 @@ impl Population {
         self.size -= 1;
     }
 
-    fn execute_move<'b>(&'b mut self) {
-        // move an individual within the population
-    }
+    // fn execute_move<'b>(&'b mut self) {
+    //     // move an individual within the population
+    // }
 
     fn choose_event(&self) -> (Event, usize, f64) {
         // pick the event type and individual at random from the poopulation
@@ -314,15 +317,14 @@ impl Population {
                     .map(|x| x.p_death / p_death_sum)
                     .collect();
                 weighted_sample(&self.individuals, &weights, &mut rng)
-            }
-            Event::Move => {
-                let weights = self
-                    .individuals
-                    .iter()
-                    .map(|x| x.p_move / p_move_sum)
-                    .collect();
-                weighted_sample(&self.individuals, &weights, &mut rng)
-            }
+            } // Event::Move => {
+              //     let weights = self
+              //         .individuals
+              //         .iter()
+              //         .map(|x| x.p_move / p_move_sum)
+              //         .collect();
+              //     weighted_sample(&self.individuals, &weights, &mut rng)
+              // }
         };
         let chosen_individual_id = self
             .individuals
@@ -334,7 +336,11 @@ impl Population {
     }
 
     fn get_checkpoint(&self, time: f64) -> Checkpoint {
-        let history_vec: Vec<(usize, f64, f64)> = self.individuals.iter().map(|x| (x.species.id, x.x_coord, x.y_coord)).collect();
+        let history_vec: Vec<(usize, f64, f64)> = self
+            .individuals
+            .iter()
+            .map(|x| (x.species.id, x.x_coord, x.y_coord))
+            .collect();
         let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         Checkpoint {
             time,
@@ -360,7 +366,7 @@ impl Population {
             match chosen_event {
                 Event::Birth => self.execute_birth(chosen_individual_id),
                 Event::Death => self.execute_death(chosen_individual_id),
-                Event::Move => self.execute_move(),
+                // Event::Move => self.execute_move(),
             }
             let next_checkpoint = self.get_checkpoint(t);
             self.history.checkpoints.push(next_checkpoint);
@@ -377,7 +383,11 @@ impl Population {
 
     pub fn save_history(&self) {
         let mut file = File::create("data/history.json").unwrap();
-        file.write_all(serde_json::to_string(&self.history.checkpoints).unwrap().as_bytes());
+        let _ = file.write_all(
+            serde_json::to_string(&self.history.checkpoints)
+                .expect("Expected checkpoint to be serialisable")
+                .as_bytes(),
+        );
     }
 }
 
@@ -398,20 +408,20 @@ mod tests {
     fn default_species() -> Species {
         Species {
             id: 0,
-            B0: 0.0,
-            B1: 0.0,
-            C1: 0.0,
-            D0: 0.0,
-            D1: 0.0,
-            Mbrmax: 0.0,
-            Mbsd: 0.0,
-            Mintegral: 0.0,
-            Mrmax: 0.0,
-            Msd: 0.0,
-            Wbrmax: 0.0,
-            Wbsd: 0.0,
-            Wdrmax: 0.0,
-            Wdsd: 0.0,
+            b0: 0.0,
+            b1: 0.0,
+            c1: 0.0,
+            d0: 0.0,
+            d1: 0.0,
+            mbrmax: 0.0,
+            mbsd: 0.0,
+            mintegral: 0.0,
+            move_radius_max: 0.0,
+            move_std: 0.0,
+            birth_radius_max: 0.0,
+            birth_std: 0.0,
+            death_radius_max: 0.0,
+            death_std: 0.0,
         }
     }
 
