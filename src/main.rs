@@ -11,8 +11,8 @@ fn main() {
             .map(|x| -> Species { x.unwrap() }),
     );
 
-    let species_ids: Vec<usize> = vec![1, 2];
+    let species_ids: Vec<usize> = vec![0, 2];
 
     let mut population = Population::new(species_array.select(Axis(0), &species_ids).to_vec());
-    population.simulate(41.0);
+    population.simulate(31.0);
 }
