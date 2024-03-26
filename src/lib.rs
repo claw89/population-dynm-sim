@@ -16,7 +16,7 @@ enum Event {
     Move,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Species {
     pub id: usize,
     pub B0: f64,
@@ -36,9 +36,9 @@ pub struct Species {
 }
 
 #[derive(PartialEq, Clone, Copy)]
-struct Individual<'a> {
+struct Individual {
     id: usize,
-    species: &'a Species,
+    species: Species,
     x_coord: f64,
     y_coord: f64,
     p_birth: f64,
@@ -50,8 +50,8 @@ struct Individual<'a> {
     death_neighbor_weight: f64,
 }
 
-impl<'a> Individual<'a> {
-    pub fn new(id: usize, species: &'a Species, x_coord: f64, y_coord: f64) -> Self {
+impl Individual {
+    pub fn new(id: usize, species: Species, x_coord: f64, y_coord: f64) -> Self {
         Individual {
             id: id,
             species: species,
@@ -101,22 +101,22 @@ struct History {
     checkpoints: Vec<Checkpoint>
 }
 
-pub struct Population<'a> {
-    individuals: Vec<Individual<'a>>,
+pub struct Population {
+    individuals: Vec<Individual>,
     size: usize,
     distances: Array2<f64>,
     history: History,
 }
 
-impl<'a> Population<'a> {
-    pub fn new(species_list: Vec<&'a Species>) -> Self {
+impl Population {
+    pub fn new(species_list: Vec<Species>) -> Self {
         // create individuals for each species
         let mut individuals: Vec<Individual> = vec![];
         let mut idx = 0;
         let mut rng = rand::thread_rng();
         for species in species_list {
             for _ in 0..(species.C1 as usize) {
-                let new_individual = Individual::new(idx, species, rng.gen(), rng.gen());
+                let new_individual = Individual::new(idx, species.clone(), rng.gen(), rng.gen());
                 individuals.push(new_individual);
                 idx += 1;
             }
@@ -344,11 +344,11 @@ impl<'a> Population<'a> {
         }
     }
 
-    pub fn simulate(&'a mut self, max_t: f64) {
+    pub fn simulate(&mut self, max_t: f64) {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
         let mut rng = rand::thread_rng();
-        let prog = ProgressBar::new(max_t as u64);
+        let prog = ProgressBar::new((max_t - 1.0) as u64);
 
         while t < max_t {
             for event in [Event::Birth, Event::Death] {
@@ -417,9 +417,9 @@ mod tests {
 
     #[rstest]
     fn test_new_individual(default_species: Species) {
-        let individual = Individual::new(0, &default_species, 0.0, 0.0);
+        let individual = Individual::new(0, default_species, 0.0, 0.0);
         assert_eq!(individual.id, 0);
-        assert_eq!(individual.species, &default_species);
+        assert_eq!(individual.species, default_species);
         assert_eq!(individual.x_coord, 0.0);
         assert_eq!(individual.y_coord, 0.0);
     }
