@@ -1,6 +1,7 @@
 use indicatif::ProgressBar;
 use itertools::{multiunzip, multizip, repeat_n, RepeatN};
 use ndarray::{s, Array, Array2, Axis};
+use plotters::prelude::*;
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
@@ -8,6 +9,14 @@ use serde_json;
 use std::f64::consts::PI;
 use std::fs::File;
 use std::io::prelude::*;
+
+const COLORS: [RGBColor; 5] = [
+    full_palette::BLUE_600,
+    full_palette::ORANGE_600,
+    full_palette::GREEN_600,
+    full_palette::RED_600, 
+    full_palette::PURPLE_600
+];
 
 #[derive(Clone, Copy)]
 enum Event {
@@ -395,6 +404,26 @@ impl Population {
                 .expect("Expected checkpoint to be serialisable")
                 .as_bytes(),
         );
+    }
+
+    pub fn plot(&self, path: &str) {
+        let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
+
+        drawing_area.fill(&WHITE).unwrap();
+
+        let mut ctx = ChartBuilder::on(&drawing_area)
+            .margin(35)
+            .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
+            .unwrap();
+
+        ctx.configure_mesh().max_light_lines(0).draw().unwrap();
+
+        ctx.draw_series(
+            self.individuals
+                .iter()
+                .map(|x| Circle::new((x.x_coord, x.y_coord), 8, COLORS[x.species.id].mix(0.6).filled())),
+        )
+        .unwrap();
     }
 }
 
