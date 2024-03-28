@@ -412,25 +412,25 @@ impl Population {
         );
     }
 
-    pub fn plot(&self, path: &str) {
-        let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
+    // pub fn plot(&self, path: &str) {
+    //     let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
 
-        drawing_area.fill(&WHITE).unwrap();
+    //     drawing_area.fill(&WHITE).unwrap();
 
-        let mut ctx = ChartBuilder::on(&drawing_area)
-            .margin(35)
-            .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
-            .unwrap();
+    //     let mut ctx = ChartBuilder::on(&drawing_area)
+    //         .margin(35)
+    //         .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
+    //         .unwrap();
 
-        ctx.configure_mesh().max_light_lines(0).draw().unwrap();
+    //     ctx.configure_mesh().max_light_lines(0).draw().unwrap();
 
-        ctx.draw_series(
-            self.individuals
-                .iter()
-                .map(|x| Circle::new((x.x_coord, x.y_coord), 8, COLORS[x.species.id].mix(0.6).filled())),
-        )
-        .unwrap();
-    }
+    //     ctx.draw_series(
+    //         self.individuals
+    //             .iter()
+    //             .map(|x| Circle::new((x.x_coord, x.y_coord), 8, COLORS[x.species.id].mix(0.6).filled())),
+    //     )
+    //     .unwrap();
+    // }
 }
 
 fn weighted_sample<T>(choices: &Vec<T>, weights: &Vec<f64>, rng: &mut ThreadRng) -> T
