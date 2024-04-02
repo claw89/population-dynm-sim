@@ -1,7 +1,7 @@
 use indicatif::ProgressBar;
 use itertools::{multiunzip, multizip, repeat_n, RepeatN};
-use ndarray::{s, Array, Array2, Axis};
-use plotters::prelude::*;
+use ndarray::{s, Array, Array2, ArrayBase, Axis, Dim, OwnedRepr};
+// use plotters::prelude::*;
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
@@ -10,16 +10,16 @@ use std::f64::consts::PI;
 use std::fs::File;
 use std::io::prelude::*;
 
-const COLORS: [RGBColor; 5] = [
-    full_palette::BLUE_600,
-    full_palette::ORANGE_600,
-    full_palette::GREEN_600,
-    full_palette::RED_600, 
-    full_palette::PURPLE_600
-];
+// const COLORS: [RGBColor; 5] = [
+//     full_palette::BLUE_600,
+//     full_palette::ORANGE_600,
+//     full_palette::GREEN_600,
+//     full_palette::RED_600, 
+//     full_palette::PURPLE_600
+// ];
 
 #[derive(Clone, Copy)]
-enum Event {
+pub enum Event {
     Birth,
     Death,
     // Move,
@@ -97,7 +97,7 @@ impl Individual {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Checkpoint {
     time: f64,
     species_ids: Vec<usize>,
@@ -105,15 +105,16 @@ struct Checkpoint {
     y_coords: Vec<f64>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct History {
     checkpoints: Vec<Checkpoint>,
 }
 
+#[derive(Clone)]
 pub struct Population {
     individuals: Vec<Individual>,
     size: usize,
-    distances: Array2<f64>,
+    distances: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
     history: History,
 }
 
@@ -375,7 +376,7 @@ impl Population {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
         let mut rng = rand::thread_rng();
-        let prog = ProgressBar::new((max_t - 1.0) as u64);
+        // let prog = ProgressBar::new((max_t - 1.0) as u64);
 
         while t < max_t {
             for event in [Event::Birth, Event::Death] {
@@ -395,11 +396,11 @@ impl Population {
             let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
             assert!(delta_t > 0.0);
             t += delta_t;
-            if t as u64 > prog.position() + 1 {
-                prog.inc(1);
-            }
+            // if t as u64 > prog.position() + 1 {
+            //     prog.inc(1);
+            // }
         }
-        self.save_history();
+        // self.save_history();
         println!("Completed with {:?} steps", self.history.checkpoints.len());
     }
 
@@ -412,25 +413,25 @@ impl Population {
         );
     }
 
-    pub fn plot(&self, path: &str) {
-        let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
+    // pub fn plot(&self, path: &str) {
+    //     let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
 
-        drawing_area.fill(&WHITE).unwrap();
+    //     drawing_area.fill(&WHITE).unwrap();
 
-        let mut ctx = ChartBuilder::on(&drawing_area)
-            .margin(35)
-            .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
-            .unwrap();
+    //     let mut ctx = ChartBuilder::on(&drawing_area)
+    //         .margin(35)
+    //         .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
+    //         .unwrap();
 
-        ctx.configure_mesh().max_light_lines(0).draw().unwrap();
+    //     ctx.configure_mesh().max_light_lines(0).draw().unwrap();
 
-        ctx.draw_series(
-            self.individuals
-                .iter()
-                .map(|x| Circle::new((x.x_coord, x.y_coord), 8, COLORS[x.species.id].mix(0.6).filled())),
-        )
-        .unwrap();
-    }
+    //     ctx.draw_series(
+    //         self.individuals
+    //             .iter()
+    //             .map(|x| Circle::new((x.x_coord, x.y_coord), 8, COLORS[x.species.id].mix(0.6).filled())),
+    //     )
+    //     .unwrap();
+    // }
 }
 
 fn weighted_sample<T>(choices: &Vec<T>, weights: &Vec<f64>, rng: &mut ThreadRng) -> T
