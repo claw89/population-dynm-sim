@@ -254,18 +254,12 @@ impl Population {
 
         // initialise child position from parent with Gaussian kernel
         let mut rng = rand::thread_rng();
-        let mut child_x_coord = Normal::new(parent.x_coord, parent.species.mbsd)
+        let child_x_coord = Normal::new(parent.x_coord, parent.species.mbsd)
             .unwrap()
-            .sample(&mut rng) % 1.0;
-        if child_x_coord < 0.0 {
-            child_x_coord += 1.0;
-        }
-        let mut child_y_coord = Normal::new(parent.y_coord, parent.species.mbsd)
+            .sample(&mut rng);
+        let child_y_coord = Normal::new(parent.y_coord, parent.species.mbsd)
             .unwrap()
-            .sample(&mut rng) % 1.0;
-        if child_y_coord < 0.0 {
-            child_y_coord += 1.0;
-        }
+            .sample(&mut rng);
 
         let max_id = self.individuals.iter().map(|x| x.id).max().unwrap();
         let child = Individual::new(max_id + 1, parent.species, child_x_coord, child_y_coord);
