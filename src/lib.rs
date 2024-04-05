@@ -1,24 +1,15 @@
 use indicatif::ProgressBar;
 use itertools::{multiunzip, multizip, repeat_n, RepeatN};
-use ndarray::{concatenate, s, Array, Array2, Array3, ArrayBase, Axis, Dim, ViewRepr};
+use ndarray::{s, Array, Array2, Array3, ArrayBase, Axis, Dim};
 use ndarray_npy::write_npy;
 use ndhistogram::{axis::Uniform, ndhistogram, Histogram};
-use plotters::prelude::*;
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::Path;
-
-const COLORS: [RGBColor; 5] = [
-    full_palette::BLUE_600,
-    full_palette::ORANGE_600,
-    full_palette::GREEN_600,
-    full_palette::RED_600,
-    full_palette::PURPLE_600,
-];
+use std::path::PathBuf;
 
 #[derive(Clone, Copy)]
 enum Event {
@@ -365,7 +356,7 @@ impl Population {
         }
     }
 
-    pub fn simulate(&mut self, max_t: f64, data_path: &Path) {
+    pub fn simulate(&mut self, max_t: f64, data_path: PathBuf, n_bins: usize) {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
         let mut t_prev: f64 = 0.0;
@@ -375,7 +366,7 @@ impl Population {
         while t < max_t {
             // save the 2d histogram to data path
             if t.floor() == t_prev.floor() + 1.0 {
-                let hist = self.get_hist(10);
+                let hist = self.get_hist(n_bins);
                 write_npy(
                     data_path.join(format!("{:0>4}.npy", (t.floor() as u64))),
                     &hist,
@@ -442,33 +433,11 @@ impl Population {
             full_hist
                 .slice_mut(s![idx, 0..n_bins + 2, 0..n_bins + 2])
                 .assign(&species_layer_2d);
-            full_hist = full_hist / self.individuals.len() as f64;
+            full_hist /= self.individuals.len() as f64;
         }
         full_hist
             .slice(s![0..self.species_list.len(), 1..n_bins + 1, 1..n_bins + 1])
             .to_owned()
-    }
-
-    pub fn plot(&self, path: &str) {
-        let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
-
-        drawing_area.fill(&WHITE).unwrap();
-
-        let mut ctx = ChartBuilder::on(&drawing_area)
-            .margin(35)
-            .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
-            .unwrap();
-
-        ctx.configure_mesh().max_light_lines(0).draw().unwrap();
-
-        ctx.draw_series(self.individuals.iter().map(|x| {
-            Circle::new(
-                (x.x_coord, x.y_coord),
-                8,
-                COLORS[x.species.id].mix(0.6).filled(),
-            )
-        }))
-        .unwrap();
     }
 }
 
