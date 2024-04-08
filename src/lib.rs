@@ -14,13 +14,14 @@ pub struct WorkerMessageReceived {
 #[derive(Serialize, Deserialize)]
 pub enum WorkerStatus {
     INITIALIZED,
+    PENDING,
     COMPLETE,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct WorkerResponse {
     pub status: WorkerStatus,
-    pub population: Population,
+    pub checkpoint: Checkpoint,
 }
 
 #[derive(Clone, Copy)]
@@ -118,6 +119,7 @@ pub struct Population {
     pub size: usize,
     distances: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
     pub history: History,
+    pub t: f64,
 }
 
 impl Population {
@@ -166,6 +168,7 @@ impl Population {
             history: History {
                 checkpoints: vec![initial_checkpoint],
             },
+            t: 0.0,
         }
     }
 
@@ -354,7 +357,7 @@ impl Population {
         (chosen_event, chosen_individual_id, p_total)
     }
 
-    fn get_checkpoint(&self, time: f64) -> Checkpoint {
+    fn get_checkpoint(&self) -> Checkpoint {
         let history_vec: Vec<(usize, f64, f64)> = self
             .individuals
             .iter()
@@ -362,22 +365,43 @@ impl Population {
             .collect();
         let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         Checkpoint {
-            time,
+            time: self.t,
             species_ids,
             x_coords,
             y_coords,
         }
     }
 
+    pub fn step(&mut self) -> (Checkpoint, f64) {
+        for event in [Event::Birth, Event::Death] {
+            let weights = self.compute_neighbor_weights(&event);
+            self.update_neighbor_weights(weights, &event);
+        }
+        self.update_probabilities();
+
+        let (chosen_event, chosen_individual_id, p_total) = self.choose_event();
+        match chosen_event {
+            Event::Birth => self.execute_birth(chosen_individual_id),
+            Event::Death => self.execute_death(chosen_individual_id),
+            // Event::Move => self.execute_move(),
+        }
+        (self.get_checkpoint(), p_total)
+    }
+
+    pub fn increment_time(&mut self, p_total: f64) {
+        let mut rng = rand::thread_rng();
+        let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
+        assert!(delta_t > 0.0);
+        self.t += delta_t;
+    }
+
     pub fn simulate(&mut self, max_t: f64) {
         //}, data_path: PathBuf, n_bins: usize) {
         // somulate the behaviour of the population over time
-        let mut t: f64 = 0.0;
         // let mut t_prev: f64 = 0.0;
-        let mut rng = rand::thread_rng();
         // let prog = ProgressBar::new((max_t - 1.0) as u64);
 
-        while t < max_t {
+        while self.t < max_t {
             // save the 2d histogram to data path
             // if t.floor() == t_prev.floor() + 1.0 {
             //     let hist = self.get_hist(n_bins);
@@ -388,27 +412,13 @@ impl Population {
             //     .unwrap();
             // }
 
-            for event in [Event::Birth, Event::Death] {
-                let weights = self.compute_neighbor_weights(&event);
-                self.update_neighbor_weights(weights, &event);
-            }
-            self.update_probabilities();
-
-            let (chosen_event, chosen_individual_id, p_total) = self.choose_event();
-            match chosen_event {
-                Event::Birth => self.execute_birth(chosen_individual_id),
-                Event::Death => self.execute_death(chosen_individual_id),
-                // Event::Move => self.execute_move(),
-            }
-            let next_checkpoint = self.get_checkpoint(t);
-            self.history.checkpoints.push(next_checkpoint);
-            let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
-            assert!(delta_t > 0.0);
+            let (checkpoint, p_total) = self.step();
             // t_prev = t;
-            t += delta_t;
+            self.increment_time(p_total);
             // if t as u64 > prog.position() + 1 {
             //     prog.inc(1);
             // }
+            self.history.checkpoints.push(checkpoint);
         }
         // self.save_history();
         println!("Completed with {:?} steps", self.history.checkpoints.len());

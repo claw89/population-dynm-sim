@@ -16,12 +16,32 @@ fn main() {
             serde_wasm_bindgen::from_value(msg.data()).unwrap();
         log!("worker: simulating");
         let mut population = Population::new(received_message.species_list);
-        population.simulate(received_message.max_t);
+        // population.simulate(received_message.max_t);
+        while population.t < received_message.max_t {
+            let (checkpoint, p_total) = population.step();
+            population.increment_time(p_total);
+            population.history.checkpoints.push(checkpoint.clone());
+
+            // Post intermediate result
+            let status = WorkerResponse {
+                status: WorkerStatus::PENDING,
+                checkpoint: checkpoint.clone(),
+            };
+            scope_clone
+                .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
+                .unwrap();
+        }
         log!("worker: simulation complete");
 
+        // Post final result
         let status = WorkerResponse {
             status: WorkerStatus::COMPLETE,
-            population,
+            checkpoint: Checkpoint {
+                time: 0.0,
+                species_ids: vec![],
+                x_coords: vec![],
+                y_coords: vec![],
+            },
         };
         scope_clone
             .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
@@ -32,7 +52,12 @@ fn main() {
 
     let status = WorkerResponse {
         status: WorkerStatus::INITIALIZED,
-        population: Population::new(vec![]),
+        checkpoint: Checkpoint {
+            time: 0.0,
+            species_ids: vec![],
+            x_coords: vec![],
+            y_coords: vec![],
+        },
     };
     scope
         .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())

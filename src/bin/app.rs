@@ -13,7 +13,7 @@ fn new_worker(name: &str) -> Worker {
 
     let script = Array::new();
     script.push(
-        &format!(r#"importScripts("{origin}/{name}.js");wasm_bindgen("{origin}/{name}_bg.wasm");"#)
+        &format!(r#"importScripts("{origin}/population-sim-view/{name}.js");wasm_bindgen("{origin}/population-sim-view/{name}_bg.wasm");"#)
             .into(),
     );
 
@@ -30,7 +30,7 @@ fn new_worker(name: &str) -> Worker {
 
 async fn load_species() -> Vec<Species> {
     let species_bytes =
-        reqwest::get("https://claw89.github.io/population-sim-view/species_params.csv")
+        reqwest::get("https://claw89.github.io/population-sim-view/data/species_params.csv")
             .await
             .unwrap()
             .text()
@@ -72,21 +72,24 @@ fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<(f64, f
 #[component]
 fn App() -> impl IntoView {
     let worker = new_worker("worker");
+    let (progress, set_progress) = create_signal::<f64>(0.0);
+    let (max_t, set_max_t) = create_signal::<f64>(10.0);
     let (coords, set_coords) = create_signal::<Vec<(f64, f64)>>(vec![]);
-    let (population_signal, set_population_signal) = create_signal(Population::new(vec![]));
+    let (history_signal, set_history_signal) = create_signal::<Vec<Checkpoint>>(vec![]);
 
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         let response: WorkerResponse =
             serde_wasm_bindgen::from_value(msg.data()).expect("Response type messafe");
         match response.status {
+            WorkerStatus::INITIALIZED => log!("app: worker ready to receive requests"),
+            WorkerStatus::PENDING => {
+                set_history_signal.update(|h| h.push(response.checkpoint.clone()));
+                // update progress bar
+                set_progress.set(response.checkpoint.time);
+                set_distribution(&response.checkpoint, set_coords);
+            }
             WorkerStatus::COMPLETE => {
-                log!(
-                    "app: simulation completed with population size {} in {} steps",
-                    response.population.size,
-                    response.population.history.checkpoints.len()
-                );
-                set_population_signal.set(response.population);
-
+                log!("app: simulation completed");
                 let document = web_sys::window().unwrap().document().unwrap();
                 let button = document.get_element_by_id("simulate_button").unwrap();
                 button
@@ -94,7 +97,6 @@ fn App() -> impl IntoView {
                     .unwrap()
                     .set_disabled(false);
             }
-            WorkerStatus::INITIALIZED => log!("app: worker ready to receive requests"),
         }
     }) as Box<dyn Fn(MessageEvent)>);
     worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
@@ -104,16 +106,25 @@ fn App() -> impl IntoView {
     let species_resource = create_resource(|| (), |_| async move { load_species().await });
 
     let worker_clone = worker.clone();
-    let max_t_node_ref = create_node_ref::<Input>();
     let view_history_node_ref = create_node_ref::<Input>();
 
     view! {
-
+        <form on:input=move |ev| {
+            ev.prevent_default();
+            set_max_t.set(event_target_value(&ev).parse::<f64>().unwrap());
+        }
+        >
+            <div>
+                <label for="max_t_selector">"Select simulation time (s)"</label>
+                <input type="number" id="max_t_selector" />
+            </div>
+        </form>
         <form on:submit=move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
             match species_resource.loading().get() {
                 true => log!("app: species params are still loading"),
                 false => {
+                    set_history_signal.set(vec![]);
                     let document = web_sys::window().unwrap().document().unwrap();
                     let button = document.get_element_by_id("simulate_button").unwrap();
                     button.dyn_ref::<HtmlButtonElement>().unwrap().set_disabled(true);
@@ -132,20 +143,15 @@ fn App() -> impl IntoView {
                         .filter(|(_, check)| *check)
                         .map(|(index, _)| all_species[index])
                         .collect::<Vec<Species>>();
-                    let max_t = max_t_node_ref.get().unwrap().value_as_number();
 
                     log!("app: sending simulation request");
                     let message_to_worker = WorkerMessageReceived{
                         species_list,
-                        max_t
+                        max_t: max_t.get()
                     };
                     worker_clone.post_message(&serde_wasm_bindgen::to_value(&message_to_worker).unwrap()).unwrap();
             }
         }}>
-        <div>
-            <label for="max_t_selector">"Select simulation time (s)"</label>
-            <input _ref=max_t_node_ref type="number" id="max_t_selector" />
-        </div>
         {move || {
             match species_resource.loading().get() {
                 true => view! {<p> "loading species params" </p>},
@@ -167,7 +173,10 @@ fn App() -> impl IntoView {
                 }
             }
         }}
-            <button type="submit" id="simulate_button">"Simulate"</button>
+            <div>
+                <button type="submit" id="simulate_button">"Simulate"</button>
+                {move || view! {<progress id="simulation_progress" max={max_t.get()} value={progress.get()} />}}
+            </div>
         </form>
 
 
@@ -176,9 +185,9 @@ fn App() -> impl IntoView {
         </div>
 
         <form on:input=move |_| {
-            let current_population = population_signal.get();
+            let history = history_signal.get();
             let view_idx = view_history_node_ref.get().unwrap().value_as_number() as usize;
-            set_distribution(&current_population.history.checkpoints[view_idx], set_coords);
+            set_distribution(&history[view_idx], set_coords);
         }
         >
         {move || view! {
@@ -186,7 +195,14 @@ fn App() -> impl IntoView {
                 _ref=view_history_node_ref
                 type="range"
                 min=0
-                max={population_signal.get().history.checkpoints.len() - 1}
+                max={
+                    if history_signal.get().len() > 0 {
+                        history_signal.get().len() - 1
+                    }
+                    else {
+                        0
+                    }
+                }
                 value=0
                 style="width: 500px;"
             />}
