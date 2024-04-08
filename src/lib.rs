@@ -86,16 +86,16 @@ impl Individual {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct Checkpoint {
-    time: f64,
-    species_ids: Vec<usize>,
-    x_coords: Vec<f64>,
-    y_coords: Vec<f64>,
+pub struct Checkpoint {
+    pub time: f64,
+    pub species_ids: Vec<usize>,
+    pub x_coords: Vec<f64>,
+    pub y_coords: Vec<f64>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct History {
-    checkpoints: Vec<Checkpoint>,
+pub struct History {
+    pub checkpoints: Vec<Checkpoint>,
 }
 
 #[derive(Clone)]
@@ -104,7 +104,7 @@ pub struct Population {
     individuals: Vec<Individual>,
     pub size: usize,
     distances: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
-    history: History,
+    pub history: History,
 }
 
 impl Population {

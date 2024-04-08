@@ -1,5 +1,5 @@
 use leptos::logging::log;
-use population_dynm_sim::{Population, Species};
+use population_dynm_sim::{Checkpoint, History, Population, Species};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{DedicatedWorkerGlobalScope, MessageEvent};
@@ -20,6 +20,7 @@ pub enum WorkerStatus {
 pub struct WorkerResponse {
     status: WorkerStatus,
     population_size: usize,
+    history: History,
 }
 
 fn main() {
@@ -41,6 +42,7 @@ fn main() {
         let status = WorkerResponse {
             status: WorkerStatus::COMPLETE,
             population_size: population.size,
+            history: population.history,
         };
         scope_clone
             .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
@@ -52,6 +54,14 @@ fn main() {
     let status = WorkerResponse {
         status: WorkerStatus::INITIALIZED,
         population_size: 0,
+        history: History {
+            checkpoints: vec![Checkpoint {
+                time: 0.0,
+                species_ids: vec![],
+                x_coords: vec![],
+                y_coords: vec![],
+            }],
+        },
     };
     scope
         .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())

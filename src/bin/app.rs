@@ -1,10 +1,10 @@
 use itertools::Itertools;
 use js_sys::Array;
-use leptos::{logging::log, *};
+use leptos::{html::Input, logging::log, *};
 use population_dynm_sim::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::{prelude::*, JsCast};
-use web_sys::{window, Blob, BlobPropertyBag, MessageEvent, Url, Worker};
+use web_sys::{window, Blob, BlobPropertyBag, HtmlInputElement, MessageEvent, Url, Worker};
 
 #[derive(Serialize, Deserialize)]
 pub struct WorkerMessageReceived {
@@ -22,6 +22,7 @@ pub enum WorkerStatus {
 pub struct WorkerResponse {
     status: WorkerStatus,
     population_size: usize,
+    history: History,
 }
 
 fn new_worker(name: &str) -> Worker {
@@ -67,8 +68,9 @@ fn App() -> impl IntoView {
             serde_wasm_bindgen::from_value(msg.data()).expect("Response type messafe");
         match response.status {
             WorkerStatus::COMPLETE => log!(
-                "app: simulation completed with population size {}",
-                response.population_size
+                "app: simulation completed with population size {} in {} steps",
+                response.population_size,
+                response.history.checkpoints.len()
             ),
             WorkerStatus::INITIALIZED => log!("app: worker ready to receive requests"),
         }
@@ -80,28 +82,65 @@ fn App() -> impl IntoView {
     let species_resource = create_resource(|| (), |_| async move { load_species().await });
 
     let worker_clone = worker.clone();
+    let max_t_node_ref = create_node_ref::<Input>();
 
     view! {
-        <input type="range" min=0 max=100 />
-        {move || match species_resource.loading().get() {
-            true => view! {<p> "loading species params" </p>},
-            false => view! { <p>
-                <ul>
-                    {species_resource.get().unwrap().into_iter()
-                        .map(|n| view! { <li>{n.id}</li>})
-                        .collect::<Vec<_>>()}
-                </ul></p>
-            }
-        }}
+
         <form on:submit=move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
-            log!("app: sending simulation request");
-            let message_to_worker = WorkerMessageReceived{
-                species_list: species_resource.get().unwrap()[0..2].to_vec(),
-                max_t: 10.0
-            };
-            worker_clone.post_message(&serde_wasm_bindgen::to_value(&message_to_worker).unwrap()).unwrap();
-        }>
+            match species_resource.loading().get() {
+                true => log!("app: species params are still loading"),
+                false => {
+                    let document = web_sys::window().unwrap().document().unwrap();
+                    let all_species = species_resource.get().unwrap();
+                    let checked_species = (0..6).map(|id| {
+                        document
+                            .get_element_by_id(&format!("species_{}", id))
+                            .unwrap()
+                            .dyn_ref::<HtmlInputElement>()
+                            .unwrap()
+                            .checked()
+                    });
+                    let species_list = checked_species
+                        .enumerate()
+                        .filter(|(_, check)| *check)
+                        .map(|(index, _)| all_species[index])
+                        .collect::<Vec<Species>>();
+                    let max_t = max_t_node_ref.get().unwrap().value_as_number();
+
+                    log!("app: sending simulation request");
+                    let message_to_worker = WorkerMessageReceived{
+                        species_list,
+                        max_t
+                    };
+                    worker_clone.post_message(&serde_wasm_bindgen::to_value(&message_to_worker).unwrap()).unwrap();
+            }
+        }}>
+        <div>
+            <label for="max_t_selector">"Select simulation time (s)"</label>
+            <input _ref=max_t_node_ref type="number" id="max_t_selector" />
+        </div>
+        {move || {
+            match species_resource.loading().get() {
+                true => view! {<p> "loading species params" </p>},
+                false => view! { <p>
+                        {species_resource.get().unwrap().into_iter()
+                            .map(|n| {
+                                view! {
+                                    <div>
+                                    <input
+                                        type="checkbox"
+                                        id={format!{"species_{}", n.id}}
+                                        name={format!{"species_{}", n.id}}
+                                    />
+                                    <label for=format!{"species_{}", n.id}>{format!{"Species {}", n.id}}</label>
+                                    </div>
+                        }})
+                        .collect::<Vec<_>>()}
+                    </p>
+                }
+            }
+        }}
             <button type="submit">"Simulate"</button>
         </form>
     }
