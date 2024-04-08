@@ -1,26 +1,7 @@
 use leptos::logging::log;
-use population_dynm_sim::{Checkpoint, History, Population, Species};
-use serde::{Deserialize, Serialize};
+use population_dynm_sim::*;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{DedicatedWorkerGlobalScope, MessageEvent};
-
-#[derive(Serialize, Deserialize)]
-pub struct WorkerMessageReceived {
-    species_list: Vec<Species>,
-    max_t: f64,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum WorkerStatus {
-    INITIALIZED,
-    COMPLETE,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct WorkerResponse {
-    status: WorkerStatus,
-    population: Population,
-}
 
 fn main() {
     console_error_panic_hook::set_once();

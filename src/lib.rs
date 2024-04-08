@@ -1,14 +1,27 @@
 use itertools::{multiunzip, multizip, repeat_n, RepeatN};
-use ndarray::{s, Array, Array2, Array3, ArrayBase, Axis, Dim, OwnedRepr};
-use ndarray_npy::write_npy;
-use ndhistogram::{axis::Uniform, ndhistogram, Histogram};
+use ndarray::{s, Array, Array2, ArrayBase, Axis, Dim, OwnedRepr};
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::PathBuf;
+
+#[derive(Serialize, Deserialize)]
+pub struct WorkerMessageReceived {
+    pub species_list: Vec<Species>,
+    pub max_t: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum WorkerStatus {
+    INITIALIZED,
+    COMPLETE,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct WorkerResponse {
+    pub status: WorkerStatus,
+    pub population: Population,
+}
 
 #[derive(Clone, Copy)]
 pub enum Event {
@@ -360,7 +373,7 @@ impl Population {
         //}, data_path: PathBuf, n_bins: usize) {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
-        let mut t_prev: f64 = 0.0;
+        // let mut t_prev: f64 = 0.0;
         let mut rng = rand::thread_rng();
         // let prog = ProgressBar::new((max_t - 1.0) as u64);
 
@@ -391,7 +404,7 @@ impl Population {
             self.history.checkpoints.push(next_checkpoint);
             let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
             assert!(delta_t > 0.0);
-            t_prev = t;
+            // t_prev = t;
             t += delta_t;
             // if t as u64 > prog.position() + 1 {
             //     prog.inc(1);
@@ -401,45 +414,45 @@ impl Population {
         println!("Completed with {:?} steps", self.history.checkpoints.len());
     }
 
-    pub fn save_history(&self) {
-        let mut file = File::create("data/history.json").unwrap();
-        let _ = file.write_all(
-            serde_json::to_string(&self.history.checkpoints)
-                .expect("Expected checkpoint to be serialisable")
-                .as_bytes(),
-        );
-    }
+    // pub fn save_history(&self) {
+    //     let mut file = File::create("data/history.json").unwrap();
+    //     let _ = file.write_all(
+    //         serde_json::to_string(&self.history.checkpoints)
+    //             .expect("Expected checkpoint to be serialisable")
+    //             .as_bytes(),
+    //     );
+    // }
 
-    fn get_hist(&self, n_bins: usize) -> ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 3]>> {
-        let mut full_hist = Array3::<f64>::zeros((self.species_list.len(), n_bins + 2, n_bins + 2));
-        // : ArrayBase<&f64>, Dim<[usize; &self.species_list.len()]>> = vec![];
-        for (idx, species) in self.species_list.iter().enumerate() {
-            let mut layer_hist = ndhistogram!(
-                Uniform::new(n_bins, 0.0, 1.0),
-                Uniform::new(n_bins, 0.0, 1.0)
-            );
-            for individual in self
-                .individuals
-                .iter()
-                .filter(|individual| individual.species.id == species.id)
-            {
-                layer_hist.fill(&(individual.x_coord, individual.y_coord));
-            }
-            let species_layer: Array<f64, Dim<[usize; 1]>> =
-                ArrayBase::from_iter(layer_hist.values().cloned());
-            let species_layer_2d = species_layer
-                .into_shape((n_bins + 2, n_bins + 2))
-                .unwrap()
-                .clone();
-            full_hist
-                .slice_mut(s![idx, 0..n_bins + 2, 0..n_bins + 2])
-                .assign(&species_layer_2d);
-            full_hist /= self.individuals.len() as f64;
-        }
-        full_hist
-            .slice(s![0..self.species_list.len(), 1..n_bins + 1, 1..n_bins + 1])
-            .to_owned()
-    }
+    // fn get_hist(&self, n_bins: usize) -> ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 3]>> {
+    //     let mut full_hist = Array3::<f64>::zeros((self.species_list.len(), n_bins + 2, n_bins + 2));
+    //     // : ArrayBase<&f64>, Dim<[usize; &self.species_list.len()]>> = vec![];
+    //     for (idx, species) in self.species_list.iter().enumerate() {
+    //         let mut layer_hist = ndhistogram!(
+    //             Uniform::new(n_bins, 0.0, 1.0),
+    //             Uniform::new(n_bins, 0.0, 1.0)
+    //         );
+    //         for individual in self
+    //             .individuals
+    //             .iter()
+    //             .filter(|individual| individual.species.id == species.id)
+    //         {
+    //             layer_hist.fill(&(individual.x_coord, individual.y_coord));
+    //         }
+    //         let species_layer: Array<f64, Dim<[usize; 1]>> =
+    //             ArrayBase::from_iter(layer_hist.values().cloned());
+    //         let species_layer_2d = species_layer
+    //             .into_shape((n_bins + 2, n_bins + 2))
+    //             .unwrap()
+    //             .clone();
+    //         full_hist
+    //             .slice_mut(s![idx, 0..n_bins + 2, 0..n_bins + 2])
+    //             .assign(&species_layer_2d);
+    //         full_hist /= self.individuals.len() as f64;
+    //     }
+    //     full_hist
+    //         .slice(s![0..self.species_list.len(), 1..n_bins + 1, 1..n_bins + 1])
+    //         .to_owned()
+    // }
 }
 
 fn weighted_sample<T>(choices: &[T], weights: &Vec<f64>, rng: &mut ThreadRng) -> T

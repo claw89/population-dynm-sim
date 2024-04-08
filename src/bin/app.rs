@@ -3,30 +3,10 @@ use js_sys::Array;
 use leptos::{html::Input, logging::log, *};
 use leptos_chart::*;
 use population_dynm_sim::*;
-use serde::{Deserialize, Serialize};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{
-    window, Blob, BlobPropertyBag, HtmlButtonElement, HtmlInputElement, InputEvent, MessageEvent,
-    Url, Worker,
+    window, Blob, BlobPropertyBag, HtmlButtonElement, HtmlInputElement, MessageEvent, Url, Worker,
 };
-
-#[derive(Serialize, Deserialize)]
-pub struct WorkerMessageReceived {
-    species_list: Vec<Species>,
-    max_t: f64,
-}
-
-#[derive(Serialize, Deserialize)]
-pub enum WorkerStatus {
-    INITIALIZED,
-    COMPLETE,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct WorkerResponse {
-    status: WorkerStatus,
-    population: Population,
-}
 
 fn new_worker(name: &str) -> Worker {
     let origin = window().unwrap().location().origin().unwrap();
