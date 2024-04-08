@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use js_sys::Array;
 use leptos::{html::Input, logging::log, *};
+use leptos_chart::*;
 use population_dynm_sim::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::{prelude::*, JsCast};
@@ -61,17 +62,44 @@ async fn load_species() -> Vec<Species> {
 }
 
 #[component]
+fn MyScatterChart(coords: Vec<(f64, f64)>) -> impl IntoView {
+    let (x_coords, y_coords): (Vec<f64>, Vec<f64>) = coords.iter().cloned().unzip();
+    let chart = Cartesian::new(
+        Series::from(x_coords).set_range(0.0, 1.0),
+        Series::from(y_coords).set_range(0.0, 1.0),
+    )
+    .set_view(620, 620, 3, 100, 100, 20);
+
+    view! {
+        // color is option
+        <ScatterChart chart=chart />
+    }
+}
+
+#[component]
 fn App() -> impl IntoView {
     let worker = new_worker("worker");
+    let (coords, set_coords) = create_signal::<Vec<(f64, f64)>>(vec![]);
+
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         let response: WorkerResponse =
             serde_wasm_bindgen::from_value(msg.data()).expect("Response type messafe");
         match response.status {
-            WorkerStatus::COMPLETE => log!(
-                "app: simulation completed with population size {} in {} steps",
-                response.population_size,
-                response.history.checkpoints.len()
-            ),
+            WorkerStatus::COMPLETE => {
+                log!(
+                    "app: simulation completed with population size {} in {} steps",
+                    response.population_size,
+                    response.history.checkpoints.len()
+                );
+                let n_checkpoints = response.history.checkpoints.len() - 1;
+                let new_coords = response.history.checkpoints[n_checkpoints]
+                    .x_coords
+                    .iter()
+                    .zip(response.history.checkpoints[n_checkpoints].y_coords.iter())
+                    .map(|(x, y)| (*x, *y))
+                    .collect();
+                set_coords.set(new_coords);
+            }
             WorkerStatus::INITIALIZED => log!("app: worker ready to receive requests"),
         }
     }) as Box<dyn Fn(MessageEvent)>);
@@ -143,6 +171,7 @@ fn App() -> impl IntoView {
         }}
             <button type="submit">"Simulate"</button>
         </form>
+        {move || view! {<MyScatterChart coords={coords.get()} /> }}
     }
 }
 
