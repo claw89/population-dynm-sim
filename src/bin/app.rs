@@ -29,12 +29,13 @@ fn new_worker(name: &str) -> Worker {
 }
 
 async fn load_species() -> Vec<Species> {
-    let species_bytes = reqwest::get("http://127.0.0.1:8080/data/species_params.csv")
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
+    let species_bytes =
+        reqwest::get("https://claw89.github.io/population-sim-view/species_params.csv")
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b',')
         .from_reader(species_bytes.as_bytes());
