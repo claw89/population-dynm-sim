@@ -5,7 +5,9 @@ use leptos_chart::*;
 use population_dynm_sim::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::{prelude::*, JsCast};
-use web_sys::{window, Blob, BlobPropertyBag, HtmlInputElement, MessageEvent, Url, Worker};
+use web_sys::{
+    window, Blob, BlobPropertyBag, HtmlButtonElement, HtmlInputElement, MessageEvent, Url, Worker,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct WorkerMessageReceived {
@@ -99,6 +101,13 @@ fn App() -> impl IntoView {
                     .map(|(x, y)| (*x, *y))
                     .collect();
                 set_coords.set(new_coords);
+
+                let document = web_sys::window().unwrap().document().unwrap();
+                let button = document.get_element_by_id("simulate_button").unwrap();
+                button
+                    .dyn_ref::<HtmlButtonElement>()
+                    .unwrap()
+                    .set_disabled(false);
             }
             WorkerStatus::INITIALIZED => log!("app: worker ready to receive requests"),
         }
@@ -120,6 +129,9 @@ fn App() -> impl IntoView {
                 true => log!("app: species params are still loading"),
                 false => {
                     let document = web_sys::window().unwrap().document().unwrap();
+                    let button = document.get_element_by_id("simulate_button").unwrap();
+                    button.dyn_ref::<HtmlButtonElement>().unwrap().set_disabled(true);
+
                     let all_species = species_resource.get().unwrap();
                     let checked_species = (0..6).map(|id| {
                         document
@@ -169,7 +181,7 @@ fn App() -> impl IntoView {
                 }
             }
         }}
-            <button type="submit">"Simulate"</button>
+            <button type="submit" id="simulate_button">"Simulate"</button>
         </form>
         {move || view! {<MyScatterChart coords={coords.get()} /> }}
     }
