@@ -6,7 +6,8 @@ use population_dynm_sim::*;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{
-    window, Blob, BlobPropertyBag, HtmlButtonElement, HtmlInputElement, MessageEvent, Url, Worker,
+    window, Blob, BlobPropertyBag, HtmlButtonElement, HtmlInputElement, InputEvent, MessageEvent,
+    Url, Worker,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -24,8 +25,7 @@ pub enum WorkerStatus {
 #[derive(Serialize, Deserialize)]
 pub struct WorkerResponse {
     status: WorkerStatus,
-    population_size: usize,
-    history: History,
+    population: Population,
 }
 
 fn new_worker(name: &str) -> Worker {
@@ -78,10 +78,21 @@ fn MyScatterChart(coords: Vec<(f64, f64)>) -> impl IntoView {
     }
 }
 
+fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<(f64, f64)>>) {
+    let new_coords = checkpoint
+        .x_coords
+        .iter()
+        .zip(checkpoint.y_coords.iter())
+        .map(|(x, y)| (*x, *y))
+        .collect();
+    set_coords.set(new_coords);
+}
+
 #[component]
 fn App() -> impl IntoView {
     let worker = new_worker("worker");
     let (coords, set_coords) = create_signal::<Vec<(f64, f64)>>(vec![]);
+    let (population_signal, set_population_signal) = create_signal(Population::new(vec![]));
 
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         let response: WorkerResponse =
@@ -90,17 +101,10 @@ fn App() -> impl IntoView {
             WorkerStatus::COMPLETE => {
                 log!(
                     "app: simulation completed with population size {} in {} steps",
-                    response.population_size,
-                    response.history.checkpoints.len()
+                    response.population.size,
+                    response.population.history.checkpoints.len()
                 );
-                let n_checkpoints = response.history.checkpoints.len() - 1;
-                let new_coords = response.history.checkpoints[n_checkpoints]
-                    .x_coords
-                    .iter()
-                    .zip(response.history.checkpoints[n_checkpoints].y_coords.iter())
-                    .map(|(x, y)| (*x, *y))
-                    .collect();
-                set_coords.set(new_coords);
+                set_population_signal.set(response.population);
 
                 let document = web_sys::window().unwrap().document().unwrap();
                 let button = document.get_element_by_id("simulate_button").unwrap();
@@ -120,6 +124,7 @@ fn App() -> impl IntoView {
 
     let worker_clone = worker.clone();
     let max_t_node_ref = create_node_ref::<Input>();
+    let view_history_node_ref = create_node_ref::<Input>();
 
     view! {
 
@@ -183,7 +188,29 @@ fn App() -> impl IntoView {
         }}
             <button type="submit" id="simulate_button">"Simulate"</button>
         </form>
+
+
+        <div style="width: 500px;" >
         {move || view! {<MyScatterChart coords={coords.get()} /> }}
+        </div>
+
+        <form on:input=move |_| {
+            let current_population = population_signal.get();
+            let view_idx = view_history_node_ref.get().unwrap().value_as_number() as usize;
+            set_distribution(&current_population.history.checkpoints[view_idx], set_coords);
+        }
+        >
+        {move || view! {
+            <input
+                _ref=view_history_node_ref
+                type="range"
+                min=0
+                max={population_signal.get().history.checkpoints.len() - 1}
+                value=0
+                style="width: 500px;"
+            />}
+        }
+        </form>
     }
 }
 

@@ -19,8 +19,7 @@ pub enum WorkerStatus {
 #[derive(Serialize, Deserialize)]
 pub struct WorkerResponse {
     status: WorkerStatus,
-    population_size: usize,
-    history: History,
+    population: Population,
 }
 
 fn main() {
@@ -41,8 +40,7 @@ fn main() {
 
         let status = WorkerResponse {
             status: WorkerStatus::COMPLETE,
-            population_size: population.size,
-            history: population.history,
+            population,
         };
         scope_clone
             .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
@@ -53,15 +51,7 @@ fn main() {
 
     let status = WorkerResponse {
         status: WorkerStatus::INITIALIZED,
-        population_size: 0,
-        history: History {
-            checkpoints: vec![Checkpoint {
-                time: 0.0,
-                species_ids: vec![],
-                x_coords: vec![],
-                y_coords: vec![],
-            }],
-        },
+        population: Population::new(vec![]),
     };
     scope
         .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())

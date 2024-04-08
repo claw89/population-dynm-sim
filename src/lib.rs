@@ -36,7 +36,7 @@ pub struct Species {
     pub death_std: f64,
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Copy)]
 struct Individual {
     id: usize,
     species: Species,
@@ -98,7 +98,7 @@ pub struct History {
     pub checkpoints: Vec<Checkpoint>,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Population {
     species_list: Vec<Species>,
     individuals: Vec<Individual>,
