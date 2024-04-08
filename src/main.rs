@@ -1,17 +1,23 @@
 use itertools::Itertools;
-use simulate::*;
 use leptos::*;
 use reqwest;
-
+use simulate::*;
 
 async fn load_species() -> Vec<Species> {
-    let species_bytes = reqwest::get("http://codepi.local:8000/data/species_params.csv").await.unwrap().text().await.unwrap();
-    let mut rdr = csv::ReaderBuilder::new().delimiter(b',').from_reader(species_bytes.as_bytes());
+    let species_bytes = reqwest::get("http://codepi.local:8000/data/species_params.csv")
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b',')
+        .from_reader(species_bytes.as_bytes());
     rdr.deserialize::<Species>()
         .into_iter()
-        .map(|x| -> Species { x.unwrap() }).collect_vec()
+        .map(|x| -> Species { x.unwrap() })
+        .collect_vec()
 }
-
 
 #[component]
 fn App() -> impl IntoView {
@@ -33,5 +39,5 @@ fn App() -> impl IntoView {
 
 fn main() {
     console_error_panic_hook::set_once();
-    mount_to_body(|| view! { <App /> } );
+    mount_to_body(|| view! { <App /> });
 }

@@ -1,22 +1,15 @@
 use indicatif::ProgressBar;
 use itertools::{multiunzip, multizip, repeat_n, RepeatN};
-use ndarray::{s, Array, Array2, ArrayBase, Axis, Dim, OwnedRepr};
-// use plotters::prelude::*;
+use ndarray::{s, Array, Array2, Array3, ArrayBase, Axis, Dim};
+use ndarray_npy::write_npy;
+use ndhistogram::{axis::Uniform, ndhistogram, Histogram};
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::f64::consts::PI;
 use std::fs::File;
 use std::io::prelude::*;
-
-// const COLORS: [RGBColor; 5] = [
-//     full_palette::BLUE_600,
-//     full_palette::ORANGE_600,
-//     full_palette::GREEN_600,
-//     full_palette::RED_600, 
-//     full_palette::PURPLE_600
-// ];
+use std::path::PathBuf;
 
 #[derive(Clone, Copy)]
 pub enum Event {
@@ -53,8 +46,6 @@ struct Individual {
     p_birth: f64,
     p_death: f64,
     p_move: f64,
-    // birth_neighbors: u32,
-    // death_neighbors: u32,
     birth_neighbor_weight: f64,
     death_neighbor_weight: f64,
 }
@@ -62,15 +53,13 @@ struct Individual {
 impl Individual {
     pub fn new(id: usize, species: Species, x_coord: f64, y_coord: f64) -> Self {
         Individual {
-            id: id,
-            species: species,
-            x_coord: x_coord,
-            y_coord: y_coord,
+            id,
+            species,
+            x_coord,
+            y_coord,
             p_birth: 0.0,
             p_death: 0.0,
             p_move: 0.0,
-            // birth_neighbors: 0,
-            // death_neighbors: 0,
             birth_neighbor_weight: 0.0,
             death_neighbor_weight: 0.0,
         }
@@ -112,6 +101,7 @@ struct History {
 
 #[derive(Clone)]
 pub struct Population {
+    species_list: Vec<Species>,
     individuals: Vec<Individual>,
     size: usize,
     distances: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
@@ -124,9 +114,9 @@ impl Population {
         let mut individuals: Vec<Individual> = vec![];
         let mut idx = 0;
         let mut rng = rand::thread_rng();
-        for species in species_list {
+        for species in species_list.clone() {
             for _ in 0..(species.c1 as usize) {
-                let new_individual = Individual::new(idx, species.clone(), rng.gen(), rng.gen());
+                let new_individual = Individual::new(idx, species, rng.gen(), rng.gen());
                 individuals.push(new_individual);
                 idx += 1;
             }
@@ -137,7 +127,7 @@ impl Population {
         for first in &individuals {
             for seccond in &individuals {
                 if first.id != seccond.id {
-                    distances[[first.id, seccond.id]] = first.distance(&seccond);
+                    distances[[first.id, seccond.id]] = first.distance(seccond);
                 }
             }
         }
@@ -157,9 +147,10 @@ impl Population {
 
         // instantiate population
         Population {
-            individuals: individuals,
+            species_list,
+            individuals,
             size: idx,
-            distances: distances,
+            distances,
             history: History {
                 checkpoints: vec![initial_checkpoint],
             },
@@ -169,32 +160,24 @@ impl Population {
     fn compute_neighbor_weights(&self, event: &Event) -> Vec<f64> {
         let distance_iter = self.distances.iter();
 
-        let radius = self
-            .individuals
-            .iter()
-            .map(|x| -> RepeatN<f64> {
-                match event {
-                    Event::Birth => repeat_n(x.species.birth_radius_max, self.size),
-                    Event::Death => repeat_n(x.species.death_radius_max, self.size),
-                    // Event::Move => 0.0, // TODO
-                }
-            })
-            .flatten();
+        let radius = self.individuals.iter().flat_map(|x| -> RepeatN<f64> {
+            match event {
+                Event::Birth => repeat_n(x.species.birth_radius_max, self.size),
+                Event::Death => repeat_n(x.species.death_radius_max, self.size),
+                // Event::Move => 0.0, // TODO
+            }
+        });
         let mask = distance_iter
             .clone()
             .zip(radius.clone())
             .map(|(d, r)| *d < r);
-        let var = self
-            .individuals
-            .iter()
-            .map(|x| -> RepeatN<f64> {
-                match event {
-                    Event::Birth => repeat_n(x.species.birth_std.powi(2), self.size),
-                    Event::Death => repeat_n(x.species.death_std.powi(2), self.size),
-                    // Event::Move => 0.0, // TODO
-                }
-            })
-            .flatten();
+        let var = self.individuals.iter().flat_map(|x| -> RepeatN<f64> {
+            match event {
+                Event::Birth => repeat_n(x.species.birth_std.powi(2), self.size),
+                Event::Death => repeat_n(x.species.death_std.powi(2), self.size),
+                // Event::Move => 0.0, // TODO
+            }
+        });
         let effect = self.individuals.iter().map(move |x| -> f64 {
             match event {
                 Event::Birth => x.species.b1,
@@ -212,7 +195,7 @@ impl Population {
         });
         let weight_full = Array::from_iter(multizip((distance_iter, var, norm, mask)).map(
             |(d, v, n, m)| -> f64 {
-                if v == 0.0 || n == 0.0 || m == false {
+                if v == 0.0 || n == 0.0 || !m {
                     0.0
                 } else {
                     ((-1.0 * d.powi(2)) / (2.0 * v)).exp() / n
@@ -230,7 +213,7 @@ impl Population {
             .collect()
     }
 
-    fn update_neighbor_weights<'b>(&'b mut self, weight: Vec<f64>, event: &Event) {
+    fn update_neighbor_weights(&mut self, weight: Vec<f64>, event: &Event) {
         // use the pairwise distances to update the individual neighbor weights
 
         for (i, w) in self.individuals.iter_mut().zip(weight) {
@@ -242,14 +225,14 @@ impl Population {
         }
     }
 
-    fn update_probabilities<'b>(&'b mut self) {
+    fn update_probabilities(&mut self) {
         // update birth, death, and move probabilities
         for individual in self.individuals.iter_mut() {
             individual.update_probabilities();
         }
     }
 
-    fn execute_birth<'b>(&'b mut self, parent_id: usize) {
+    fn execute_birth(&mut self, parent_id: usize) {
         // create a new invidual
         let parent = self.individuals[parent_id];
 
@@ -257,13 +240,15 @@ impl Population {
         let mut rng = rand::thread_rng();
         let mut child_x_coord = Normal::new(parent.x_coord, parent.species.mbsd)
             .unwrap()
-            .sample(&mut rng) % 1.0;
+            .sample(&mut rng)
+            % 1.0;
         if child_x_coord < 0.0 {
             child_x_coord += 1.0;
         }
         let mut child_y_coord = Normal::new(parent.y_coord, parent.species.mbsd)
             .unwrap()
-            .sample(&mut rng) % 1.0;
+            .sample(&mut rng)
+            % 1.0;
         if child_y_coord < 0.0 {
             child_y_coord += 1.0;
         }
@@ -279,13 +264,13 @@ impl Population {
                 .map(|i| -> f64 { i.distance(&child) }),
         );
         updated_distances
-            .slice_mut(s![0..-1, 0..-1])
+            .slice_mut(s![0..self.size, 0..self.size])
             .assign(&self.distances);
         updated_distances
-            .slice_mut(s![-1, 0..-1])
+            .slice_mut(s![self.size, 0..self.size])
             .assign(&child_distances);
         updated_distances
-            .slice_mut(s![0..-1, -1])
+            .slice_mut(s![0..self.size, self.size])
             .assign(&child_distances);
         self.distances = updated_distances;
 
@@ -294,7 +279,7 @@ impl Population {
         self.size += 1;
     }
 
-    fn execute_death<'b>(&'b mut self, deceased_id: usize) {
+    fn execute_death(&mut self, deceased_id: usize) {
         // remove an individual from the population
         self.distances.remove_index(Axis(0), deceased_id);
         self.distances.remove_index(Axis(1), deceased_id);
@@ -372,13 +357,24 @@ impl Population {
         }
     }
 
-    pub fn simulate(&mut self, max_t: f64) {
+    pub fn simulate(&mut self, max_t: f64, data_path: PathBuf, n_bins: usize) {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
+        let mut t_prev: f64 = 0.0;
         let mut rng = rand::thread_rng();
         // let prog = ProgressBar::new((max_t - 1.0) as u64);
 
         while t < max_t {
+            // save the 2d histogram to data path
+            if t.floor() == t_prev.floor() + 1.0 {
+                let hist = self.get_hist(n_bins);
+                write_npy(
+                    data_path.join(format!("{:0>4}.npy", (t.floor() as u64))),
+                    &hist,
+                )
+                .unwrap();
+            }
+
             for event in [Event::Birth, Event::Death] {
                 let weights = self.compute_neighbor_weights(&event);
                 self.update_neighbor_weights(weights, &event);
@@ -395,6 +391,7 @@ impl Population {
             self.history.checkpoints.push(next_checkpoint);
             let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
             assert!(delta_t > 0.0);
+            t_prev = t;
             t += delta_t;
             // if t as u64 > prog.position() + 1 {
             //     prog.inc(1);
@@ -413,28 +410,39 @@ impl Population {
         );
     }
 
-    // pub fn plot(&self, path: &str) {
-    //     let drawing_area = BitMapBackend::new(path, (768, 768)).into_drawing_area();
-
-    //     drawing_area.fill(&WHITE).unwrap();
-
-    //     let mut ctx = ChartBuilder::on(&drawing_area)
-    //         .margin(35)
-    //         .build_cartesian_2d(0.0f64..1.0f64, 0.0f64..1.0f64)
-    //         .unwrap();
-
-    //     ctx.configure_mesh().max_light_lines(0).draw().unwrap();
-
-    //     ctx.draw_series(
-    //         self.individuals
-    //             .iter()
-    //             .map(|x| Circle::new((x.x_coord, x.y_coord), 8, COLORS[x.species.id].mix(0.6).filled())),
-    //     )
-    //     .unwrap();
-    // }
+    fn get_hist(&self, n_bins: usize) -> ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 3]>> {
+        let mut full_hist = Array3::<f64>::zeros((self.species_list.len(), n_bins + 2, n_bins + 2));
+        // : ArrayBase<&f64>, Dim<[usize; &self.species_list.len()]>> = vec![];
+        for (idx, species) in self.species_list.iter().enumerate() {
+            let mut layer_hist = ndhistogram!(
+                Uniform::new(n_bins, 0.0, 1.0),
+                Uniform::new(n_bins, 0.0, 1.0)
+            );
+            for individual in self
+                .individuals
+                .iter()
+                .filter(|individual| individual.species.id == species.id)
+            {
+                layer_hist.fill(&(individual.x_coord, individual.y_coord));
+            }
+            let species_layer: Array<f64, Dim<[usize; 1]>> =
+                ArrayBase::from_iter(layer_hist.values().cloned());
+            let species_layer_2d = species_layer
+                .into_shape((n_bins + 2, n_bins + 2))
+                .unwrap()
+                .clone();
+            full_hist
+                .slice_mut(s![idx, 0..n_bins + 2, 0..n_bins + 2])
+                .assign(&species_layer_2d);
+            full_hist /= self.individuals.len() as f64;
+        }
+        full_hist
+            .slice(s![0..self.species_list.len(), 1..n_bins + 1, 1..n_bins + 1])
+            .to_owned()
+    }
 }
 
-fn weighted_sample<T>(choices: &Vec<T>, weights: &Vec<f64>, rng: &mut ThreadRng) -> T
+fn weighted_sample<T>(choices: &[T], weights: &Vec<f64>, rng: &mut ThreadRng) -> T
 where
     T: Copy,
 {
