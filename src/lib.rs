@@ -1,6 +1,5 @@
-use indicatif::ProgressBar;
 use itertools::{multiunzip, multizip, repeat_n, RepeatN};
-use ndarray::{s, Array, Array2, Array3, ArrayBase, Axis, Dim};
+use ndarray::{s, Array, Array2, Array3, ArrayBase, Axis, Dim, OwnedRepr};
 use ndarray_npy::write_npy;
 use ndhistogram::{axis::Uniform, ndhistogram, Histogram};
 use rand::prelude::*;
@@ -103,7 +102,7 @@ struct History {
 pub struct Population {
     species_list: Vec<Species>,
     individuals: Vec<Individual>,
-    size: usize,
+    pub size: usize,
     distances: ArrayBase<OwnedRepr<f64>, Dim<[usize; 2]>>,
     history: History,
 }
@@ -357,7 +356,8 @@ impl Population {
         }
     }
 
-    pub fn simulate(&mut self, max_t: f64, data_path: PathBuf, n_bins: usize) {
+    pub fn simulate(&mut self, max_t: f64) {
+        //}, data_path: PathBuf, n_bins: usize) {
         // somulate the behaviour of the population over time
         let mut t: f64 = 0.0;
         let mut t_prev: f64 = 0.0;
@@ -366,14 +366,14 @@ impl Population {
 
         while t < max_t {
             // save the 2d histogram to data path
-            if t.floor() == t_prev.floor() + 1.0 {
-                let hist = self.get_hist(n_bins);
-                write_npy(
-                    data_path.join(format!("{:0>4}.npy", (t.floor() as u64))),
-                    &hist,
-                )
-                .unwrap();
-            }
+            // if t.floor() == t_prev.floor() + 1.0 {
+            //     let hist = self.get_hist(n_bins);
+            //     write_npy(
+            //         data_path.join(format!("{:0>4}.npy", (t.floor() as u64))),
+            //         &hist,
+            //     )
+            //     .unwrap();
+            // }
 
             for event in [Event::Birth, Event::Death] {
                 let weights = self.compute_neighbor_weights(&event);
