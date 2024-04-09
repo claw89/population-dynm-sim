@@ -73,10 +73,18 @@ fn PlotlyChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
         "Plotly.newPlot('plotly_chart', {{
             'data': [{}],
             'layout': {{
+                'margin': {{
+                    'l': 0,
+                    'r': 0,
+                    'b': 0,
+                    't': 0,
+                    'pad': 4
+                }},
+                'showlegend': false,
                 'plot_bgcolor': '#dbdbdb',
                 'autosize': false,
-                'width': 700,
-                'height': 700,
+                'width': 400,
+                'height': 400,
                 'xaxis': {{
                     'range': [0.0, 1.0],
                     'visible': false
@@ -92,7 +100,7 @@ fn PlotlyChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
     );
 
     view! {
-        <div id="plotly_chart" style="width=200px; height=200px"></div>
+        <div  id="plotly_chart" style="width=500px"></div>
         <script type="text/javascript">
             {script}
         </script>
@@ -110,6 +118,8 @@ fn App() -> impl IntoView {
     let (max_t, set_max_t) = create_signal::<f64>(10.0);
     let (coords, set_coords) = create_signal::<Vec<(Vec<f64>, Vec<f64>)>>(vec![]);
     let (history_signal, set_history_signal) = create_signal::<Vec<Checkpoint>>(vec![]);
+    let (species_detail, set_species_detail) = create_signal(0);
+    let (checked_species, set_checked_species) = create_signal::<Vec<usize>>(vec![]);
 
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         let response: WorkerResponse =
@@ -145,17 +155,11 @@ fn App() -> impl IntoView {
     let view_history_node_ref = create_node_ref::<Input>();
 
     view! {
-        <form on:input=move |ev| {
-            ev.prevent_default();
-            set_max_t.set(event_target_value(&ev).parse::<f64>().unwrap());
-        }
-        >
-            <div>
-                <label for="max_t_selector">"Select simulation time (s)"</label>
-                <input type="number" id="max_t_selector" />
-            </div>
-        </form>
-        <form on:submit=move |ev: leptos::ev::SubmitEvent| {
+        <div id="backgroud" style="display:flex; background: #F0F8FF; flex-direction: row; justify-content: center; align-items: top">
+        <div id ="main" style="width: 500px; background: white; padding: 50px; padding-top: 10px" >
+        <h1  style="width: 500px">"Population dynamics simulation viewer"</h1>
+        <h3  style="width: 500px">"Choose population parameters"</h3>
+        <form style="width: 500px" on:submit=move |ev: leptos::ev::SubmitEvent| {
             ev.prevent_default();
             match species_resource.loading().get() {
                 true => log!("app: species params are still loading"),
@@ -166,18 +170,10 @@ fn App() -> impl IntoView {
                     button.dyn_ref::<HtmlButtonElement>().unwrap().set_disabled(true);
 
                     let all_species = species_resource.get().unwrap();
-                    let checked_species = (0..6).map(|id| {
-                        document
-                            .get_element_by_id(&format!("species_{}", id))
-                            .unwrap()
-                            .dyn_ref::<HtmlInputElement>()
-                            .unwrap()
-                            .checked()
-                    });
-                    let species_list = checked_species
-                        .enumerate()
-                        .filter(|(_, check)| *check)
-                        .map(|(index, _)| all_species[index])
+                    let mut submited_species = checked_species.get().clone();
+                    submited_species.sort();
+                    let species_list = submited_species.iter()
+                        .map(|index| all_species[*index])
                         .collect::<Vec<Species>>();
 
                     log!("app: sending simulation request");
@@ -188,39 +184,145 @@ fn App() -> impl IntoView {
                     worker_clone.post_message(&serde_wasm_bindgen::to_value(&message_to_worker).unwrap()).unwrap();
             }
         }}>
+        <div id="species" style="display:flex; flex-direction: row; justify-content: left; align-items: top">
+
         {move || {
             match species_resource.loading().get() {
-                true => view! {<p> "loading species params" </p>},
-                false => view! { <p>
+                true => view! { <div id="tabs"></div>},
+                false => view! {  <div id="tabs">
                         {species_resource.get().unwrap().into_iter()
                             .map(|n| {
                                 view! {
-                                    <div>
+                                    <div
+                                        id="species_tab"
+                                        style={
+                                            let mut style = "padding: 4px; display:flex; flex-direction: row; justify-content: left; align-items: top; ".to_string();
+                                            if n.id == species_detail.get() {
+                                                style.push_str("border-style: solid; border-width: 1px; border-right-style: none; ");
+                                            }
+                                            else {
+                                                style.push_str("background: #dbdbdb; border-width: 1px; border-right-style: solid; ");
+                                            }
+                                            style
+                                        }>
                                     <input
                                         type="checkbox"
-                                        id={format!{"species_{}", n.id}}
-                                        name={format!{"species_{}", n.id}}
+                                        id=format!("species_{}_checkbox", n.id)
+                                        on:input=move |ev| {
+                                            match event_target_checked(&ev) {
+                                                true => set_checked_species.update(|v| v.push(n.id)),
+                                                false => set_checked_species.update(|v| v.retain(|&x| x != n.id))
+                                            }
+                                        }
                                     />
-                                    <label for=format!{"species_{}", n.id}>{format!{"Species {}", n.id}}</label>
+                                    <p on:click=move |_| {
+                                        set_species_detail.set(n.id);
+                                        let document = web_sys::window().unwrap().document().unwrap();
+                                        for checked_id in checked_species.get() {
+                                            document.get_element_by_id(&format!("species_{}_checkbox", checked_id))
+                                                .unwrap()
+                                                .dyn_ref::<HtmlInputElement>()
+                                                .unwrap()
+                                                .set_checked(true);
+                                        }
+                                    }
+                                    style="margin: 0"
+                                    >{format!{"Species {}", n.id}}</p>
                                     </div>
                         }})
                         .collect::<Vec<_>>()}
-                    </p>
+                    </div>
                 }
             }
         }}
-            <div>
-                <button type="submit" id="simulate_button">"Simulate"</button>
-                {move || view! {<progress id="simulation_progress" max={max_t.get()} value={progress.get()} />}}
+        <div id="details" style="border-style: solid; border-width: 1px; border-left-style: none; padding-right: 15px; display:flex; flex-direction: row; justify-content: left; align-items: top">
+        {move || {
+            match species_resource.loading().get() {
+                true => view! {<div id="details_0"></div>},
+                false => view! { <div id="details_0">
+                        {species_resource.get().unwrap().into_iter()
+                            .map(|n| {
+                                view! {
+                                    <div id=format!{"species_{}_details_c0", n.id} style={
+                                        if n.id == species_detail.get() {
+                                            "display: block; visibility: visible"
+                                        }
+                                        else {
+                                            "display: none; visibility: hidden"
+                                        }
+                                    }>
+                                        <ul>
+                                            <li>{format!{"b0: {}", n.b0}}</li>
+                                            <li>{format!{"b1: {}", n.b1}}</li>
+                                            <li>{format!{"c1: {}", n.c1}}</li>
+                                            <li>{format!{"d0: {}", n.d0}}</li>
+                                            <li>{format!{"d1: {}", n.d1}}</li>
+                                            <li>{format!{"mbrmax: {}", n.mbrmax}}</li>
+                                            <li>{format!{"mbsd: {}", n.mbsd}}</li>
+                                        </ul>
+                                    </div>
+                        }})
+                        .collect::<Vec<_>>()}
+                    </div>
+
+                }
+            }
+        }}
+        {move || {
+            match species_resource.loading().get() {
+                true => view! {<div id="details_1"></div>},
+                false => view! { <div id="details_1">
+                        {species_resource.get().unwrap().into_iter()
+                            .map(|n| {
+                                view! {
+                                    <div id=format!{"species_{}_details_c1", n.id} style={
+                                        if n.id == species_detail.get() {
+                                            "display: block; visibility: visible"
+                                        }
+                                        else {
+                                            "display: none; visibility: hidden"
+                                        }
+                                    }>
+                                        <ul>
+                                            <li>{format!{"mintegral: {}", n.mintegral}}</li>
+                                            <li>{format!{"move_radius_max: {}", n.move_radius_max}}</li>
+                                            <li>{format!{"move_std: {}", n.move_std}}</li>
+                                            <li>{format!{"birth_radius_max: {}", n.birth_radius_max}}</li>
+                                            <li>{format!{"birth_std: {}", n.birth_std}}</li>
+                                            <li>{format!{"death_radius_max: {}", n.death_radius_max}}</li>
+                                            <li>{format!{"death_std: {}", n.death_std}}</li>
+                                        </ul>
+                                    </div>
+                        }})
+                        .collect::<Vec<_>>()}
+                    </div>
+
+                }
+            }
+        }}
+        </div>
+        </div>
+        <h3>"Choose duration"</h3>
+
+            <div style="display:flex; flex-direction: row; gap: 10px; justify-content: left; align-items: top">
+            <form on:input=move |ev| {
+                ev.prevent_default();
+                set_max_t.set(event_target_value(&ev).parse::<f64>().unwrap());
+            }
+            >
+            <input type="number" id="max_t_selector" value=10 style="width: 50px"/>
+            </form>
+
+            <button type="submit" id="simulate_button">"Simulate"</button>
+            {move || view! {<progress id="simulation_progress" max={max_t.get()} value={progress.get()} />}}
             </div>
         </form>
 
+        <h3>"Viewer"</h3>
+        {move || view! {<PlotlyChart coords={coords.get()}/>}}
 
-        // <div style="width: 500px;" >
-        // {move || view! {<MyScatterChart coords={coords.get()} /> }}
-        // </div>
-
-        <form on:input=move |_| {
+        <h3  style="width: 500px">"Replay"</h3>
+        <form  style="width: 500px" on:input=move |_| {
             let history = history_signal.get();
             let view_idx = view_history_node_ref.get().unwrap().value_as_number() as usize;
             set_distribution(&history[view_idx], set_coords);
@@ -244,8 +346,8 @@ fn App() -> impl IntoView {
             />}
         }
         </form>
-        {move || view! {<PlotlyChart coords={coords.get()}/>}}
-
+        </div>
+        </div>
     }
 }
 
