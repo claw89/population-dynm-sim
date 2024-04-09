@@ -38,9 +38,10 @@ fn main() {
             status: WorkerStatus::COMPLETE,
             checkpoint: Checkpoint {
                 time: 0.0,
-                species_ids: vec![],
-                x_coords: vec![],
-                y_coords: vec![],
+                // species_ids: vec![],
+                // x_coords: vec![],
+                // y_coords: vec![],
+                species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
             },
         };
         scope_clone
@@ -54,9 +55,10 @@ fn main() {
         status: WorkerStatus::INITIALIZED,
         checkpoint: Checkpoint {
             time: 0.0,
-            species_ids: vec![],
-            x_coords: vec![],
-            y_coords: vec![],
+            // species_ids: vec![],
+            // x_coords: vec![],
+            // y_coords: vec![],
+            species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
         },
     };
     scope

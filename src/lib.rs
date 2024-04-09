@@ -102,9 +102,10 @@ impl Individual {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Checkpoint {
     pub time: f64,
-    pub species_ids: Vec<usize>,
-    pub x_coords: Vec<f64>,
-    pub y_coords: Vec<f64>,
+    // pub species_ids: Vec<usize>,
+    // pub x_coords: Vec<f64>,
+    // pub y_coords: Vec<f64>,
+    pub species_individuals: Vec<(Vec<f64>, Vec<f64>)>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -147,16 +148,17 @@ impl Population {
         }
 
         // initialise history
-        let history_vec: Vec<(usize, f64, f64)> = individuals
-            .iter()
-            .map(|x| (x.species.id, x.x_coord, x.y_coord))
-            .collect();
-        let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
+        // let history_vec: Vec<(usize, f64, f64)> = individuals
+        //     .iter()
+        //     .map(|x| (x.species.id, x.x_coord, x.y_coord))
+        //     .collect();
+        // let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         let initial_checkpoint = Checkpoint {
             time: 0.0,
-            species_ids,
-            x_coords,
-            y_coords,
+            // species_ids,
+            // x_coords,
+            // y_coords,
+            species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
         };
 
         // instantiate population
@@ -358,17 +360,28 @@ impl Population {
     }
 
     fn get_checkpoint(&self) -> Checkpoint {
-        let history_vec: Vec<(usize, f64, f64)> = self
-            .individuals
-            .iter()
-            .map(|x| (x.species.id, x.x_coord, x.y_coord))
-            .collect();
-        let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
+        let mut species_individuals = vec![] as Vec<(Vec<f64>, Vec<f64>)>;
+        for species in self.species_list.clone() {
+            let coords: Vec<(f64, f64)> = self
+                .individuals
+                .iter()
+                .filter(|x| x.species.id == species.id)
+                .map(|x| (x.x_coord, x.y_coord))
+                .collect::<Vec<(f64, f64)>>();
+            species_individuals.push(coords.into_iter().unzip());
+        }
+        // let history_vec: Vec<(usize, f64, f64)> = self
+        //     .individuals
+        //     .iter()
+        //     .map(|x| (x.species.id, x.x_coord, x.y_coord))
+        //     .collect();
+        // let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         Checkpoint {
             time: self.t,
-            species_ids,
-            x_coords,
-            y_coords,
+            // species_ids,
+            // x_coords,
+            // y_coords,
+            species_individuals,
         }
     }
 

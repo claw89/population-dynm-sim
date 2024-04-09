@@ -1,12 +1,20 @@
 use itertools::Itertools;
 use js_sys::Array;
 use leptos::{html::Input, logging::log, *};
-use leptos_chart::*;
 use population_dynm_sim::*;
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{
     window, Blob, BlobPropertyBag, HtmlButtonElement, HtmlInputElement, MessageEvent, Url, Worker,
 };
+
+const COLORS: [(u8, u8, u8); 6] = [
+    (31, 119, 180),
+    (255, 126, 14),
+    (44, 160, 44),
+    (214, 39, 39),
+    (147, 103, 189),
+    (140, 86, 75),
+];
 
 fn new_worker(name: &str) -> Worker {
     let origin = window().unwrap().location().origin().unwrap();
@@ -45,28 +53,54 @@ async fn load_species() -> Vec<Species> {
 }
 
 #[component]
-fn MyScatterChart(coords: Vec<(f64, f64)>) -> impl IntoView {
-    let (x_coords, y_coords): (Vec<f64>, Vec<f64>) = coords.iter().cloned().unzip();
-    let chart = Cartesian::new(
-        Series::from(x_coords).set_range(0.0, 1.0),
-        Series::from(y_coords).set_range(0.0, 1.0),
-    )
-    .set_view(620, 620, 3, 100, 100, 20);
+fn PlotlyChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
+    let mut traces = vec![] as Vec<String>;
+    for (idx, (x_coords, y_coords)) in coords.clone().iter().enumerate() {
+        let (r, g, b) = COLORS[idx];
+        traces.push(format!(
+            "{{
+                'type': 'scatter',
+                'mode': 'markers',
+                'x': {:?},
+                'y': {:?},
+                'fillcolor': 'rgb({r}, {g}, {b})'
+            }}",
+            x_coords, y_coords
+        ));
+    }
+
+    let script = format!(
+        "Plotly.newPlot('plotly_chart', {{
+            'data': [{}],
+            'layout': {{
+                'plot_bgcolor': '#dbdbdb',
+                'autosize': false,
+                'width': 700,
+                'height': 700,
+                'xaxis': {{
+                    'range': [0.0, 1.0],
+                    'visible': false
+                }},
+                'yaxis': {{
+                    'range': [0.0, 1.0],
+                    'visible': false
+                }}
+            }},
+            'config': {{}}
+        }});",
+        traces.join(", ")
+    );
 
     view! {
-        // color is option
-        <ScatterChart chart=chart />
+        <div id="plotly_chart" style="width=200px; height=200px"></div>
+        <script type="text/javascript">
+            {script}
+        </script>
     }
 }
 
-fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<(f64, f64)>>) {
-    let new_coords = checkpoint
-        .x_coords
-        .iter()
-        .zip(checkpoint.y_coords.iter())
-        .map(|(x, y)| (*x, *y))
-        .collect();
-    set_coords.set(new_coords);
+fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<(Vec<f64>, Vec<f64>)>>) {
+    set_coords.set(checkpoint.species_individuals.clone());
 }
 
 #[component]
@@ -74,14 +108,16 @@ fn App() -> impl IntoView {
     let worker = new_worker("worker");
     let (progress, set_progress) = create_signal::<f64>(0.0);
     let (max_t, set_max_t) = create_signal::<f64>(10.0);
-    let (coords, set_coords) = create_signal::<Vec<(f64, f64)>>(vec![]);
+    let (coords, set_coords) = create_signal::<Vec<(Vec<f64>, Vec<f64>)>>(vec![]);
     let (history_signal, set_history_signal) = create_signal::<Vec<Checkpoint>>(vec![]);
 
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         let response: WorkerResponse =
             serde_wasm_bindgen::from_value(msg.data()).expect("Response type messafe");
         match response.status {
-            WorkerStatus::INITIALIZED => log!("app: worker ready to receive requests"),
+            WorkerStatus::INITIALIZED => {
+                log!("app: worker ready to receive requests");
+            }
             WorkerStatus::PENDING => {
                 set_history_signal.update(|h| h.push(response.checkpoint.clone()));
                 // update progress bar
@@ -180,9 +216,9 @@ fn App() -> impl IntoView {
         </form>
 
 
-        <div style="width: 500px;" >
-        {move || view! {<MyScatterChart coords={coords.get()} /> }}
-        </div>
+        // <div style="width: 500px;" >
+        // {move || view! {<MyScatterChart coords={coords.get()} /> }}
+        // </div>
 
         <form on:input=move |_| {
             let history = history_signal.get();
@@ -208,6 +244,8 @@ fn App() -> impl IntoView {
             />}
         }
         </form>
+        {move || view! {<PlotlyChart coords={coords.get()}/>}}
+
     }
 }
 
