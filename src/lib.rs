@@ -46,8 +46,55 @@ pub struct Species {
     pub move_std: f64,
     pub birth_radius_max: f64,
     pub birth_std: f64,
+    birth_norm: Option<f64>,
     pub death_radius_max: f64,
     pub death_std: f64,
+}
+
+impl Species {
+    pub fn new(
+        id: usize,
+        b0: f64,
+        b1: f64,
+        c1: f64,
+        d0: f64,
+        d1: f64,
+        mbrmax: f64,
+        mbsd: f64,
+        mintegral: f64,
+        move_radius_max: f64,
+        move_std: f64,
+        birth_radius_max: f64,
+        birth_std: f64,
+        death_radius_max: f64,
+        death_std: f64,
+    ) -> Self {
+        let mut birth_norm = 0.0;
+        if birth_std != 0.0 {
+            birth_norm = 2.0
+                * birth_std.powi(2)
+                * PI
+                * (1.0 - ((-1.0 * birth_radius_max.powi(2)) / (2.0 * birth_std.powi(2))).exp());
+        }
+        Species {
+            id,
+            b0,
+            b1,
+            c1,
+            d0,
+            d1,
+            mbrmax,
+            mbsd,
+            mintegral,
+            move_radius_max,
+            move_std,
+            birth_radius_max,
+            birth_std,
+            birth_norm: Some(birth_norm),
+            death_radius_max,
+            death_std,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Copy)]
@@ -203,6 +250,7 @@ impl Population {
             }
         });
 
+        // This is constant - no need to compute for every step
         let norm = radius.zip(var.clone()).map(|(r, v)| -> f64 {
             if v == 0.0 {
                 0.0
@@ -493,23 +541,9 @@ mod tests {
 
     #[fixture]
     fn default_species() -> Species {
-        Species {
-            id: 0,
-            b0: 0.0,
-            b1: 0.0,
-            c1: 0.0,
-            d0: 0.0,
-            d1: 0.0,
-            mbrmax: 0.0,
-            mbsd: 0.0,
-            mintegral: 0.0,
-            move_radius_max: 0.0,
-            move_std: 0.0,
-            birth_radius_max: 0.0,
-            birth_std: 0.0,
-            death_radius_max: 0.0,
-            death_std: 0.0,
-        }
+        Species::new(
+            0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0,
+        )
     }
 
     #[rstest]
