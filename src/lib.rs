@@ -1,6 +1,3 @@
-use itertools::{multiunzip, multizip, repeat_n, RepeatN};
-use leptos::{html::P, logging::log};
-use ndarray::{s, Array, Array2, ArrayBase, Axis, Dim, OwnedRepr};
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
@@ -183,6 +180,24 @@ pub struct Population {
     pub t: f64,
 }
 
+fn get_weight(distance: f64, std: f64, norm: f64) -> f64 {
+    ((-1.0 * distance.powi(2)) / (2.0 * std)).exp() / norm
+}
+
+fn update_distances(
+    distances: &mut Vec<f64>,
+    distance: f64,
+    radius_max: f64,
+    std: f64,
+    norm: Option<f64>,
+) {
+    if distance < radius_max && std != 0.0 && norm.is_some() {
+        distances.push(get_weight(distance, std, norm.unwrap()))
+    } else {
+        distances.push(0.0);
+    }
+}
+
 impl Population {
     pub fn compute_initial_distances(&mut self) {
         let second_individuals = &self.individuals.clone();
@@ -191,28 +206,20 @@ impl Population {
             for second in second_individuals {
                 if first.id != second.id {
                     let distance = first.distance(second);
-                    if distance < first.species.birth_radius_max
-                        && first.species.birth_std != 0.0
-                        && first.species.birth_norm.is_some()
-                    {
-                        first.birth_distances.push(
-                            ((-1.0 * distance.powi(2)) / (2.0 * first.species.birth_std)).exp()
-                                / first.species.birth_norm.unwrap(),
-                        );
-                    } else {
-                        first.birth_distances.push(0.0);
-                    }
-                    if distance < first.species.death_radius_max
-                        && first.species.death_std != 0.0
-                        && first.species.death_norm.is_some()
-                    {
-                        first.death_distances.push(
-                            ((-1.0 * distance.powi(2)) / (2.0 * first.species.death_std)).exp()
-                                / first.species.death_norm.unwrap(),
-                        );
-                    } else {
-                        first.death_distances.push(0.0);
-                    }
+                    update_distances(
+                        &mut first.birth_distances,
+                        distance,
+                        first.species.birth_radius_max,
+                        first.species.birth_std,
+                        first.species.birth_norm,
+                    );
+                    update_distances(
+                        &mut first.death_distances,
+                        distance,
+                        first.species.death_radius_max,
+                        first.species.death_std,
+                        first.species.death_norm,
+                    );
                 } else {
                     first.birth_distances.push(0.0);
                     first.death_distances.push(0.0);
@@ -233,19 +240,8 @@ impl Population {
                 idx += 1;
             }
         }
-        assert_eq!(individuals.len(), idx);
-
-        // initialise history
-        // let history_vec: Vec<(usize, f64, f64)> = individuals
-        //     .iter()
-        //     .map(|x| (x.species.id, x.x_coord, x.y_coord))
-        //     .collect();
-        // let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         let initial_checkpoint = Checkpoint {
             time: 0.0,
-            // species_ids,
-            // x_coords,
-            // y_coords,
             species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
         };
 
@@ -320,57 +316,39 @@ impl Population {
 
         let max_id = self.individuals.iter().map(|x| x.id).max().unwrap();
         let mut child = Individual::new(max_id + 1, parent.species, child_x_coord, child_y_coord);
+
+        // initialize child distances and update other individuals
         for individual in &mut self.individuals {
             let distance = child.distance(individual);
-            if distance < child.species.birth_radius_max
-                && child.species.birth_std != 0.0
-                && child.species.birth_norm.is_some()
-            {
-                child.birth_distances.push(
-                    ((-1.0 * distance.powi(2)) / (2.0 * child.species.birth_std)).exp()
-                        / child.species.birth_norm.unwrap(),
-                )
-            } else {
-                child.birth_distances.push(0.0);
-            }
+            update_distances(
+                &mut child.birth_distances,
+                distance,
+                child.species.birth_radius_max,
+                child.species.birth_std,
+                child.species.birth_norm,
+            );
+            update_distances(
+                &mut child.death_distances,
+                distance,
+                child.species.death_radius_max,
+                child.species.death_std,
+                child.species.death_norm,
+            );
 
-            if distance < child.species.death_radius_max
-                && child.species.death_std != 0.0
-                && child.species.death_norm.is_some()
-            {
-                child.death_distances.push(
-                    ((-1.0 * distance.powi(2)) / (2.0 * child.species.death_std)).exp()
-                        / child.species.death_norm.unwrap(),
-                )
-            } else {
-                child.death_distances.push(0.0);
-            }
-
-            if distance < individual.species.birth_radius_max
-                && individual.species.birth_std != 0.0
-                && individual.species.birth_norm.is_some()
-            {
-                individual.birth_distances.push(
-                    ((-1.0 * distance.powi(2)) / (2.0 * individual.species.birth_std)).exp()
-                        / individual.species.birth_norm.unwrap(),
-                )
-            } else {
-                individual.birth_distances.push(0.0);
-            }
-
-            if distance < individual.species.death_radius_max
-                && individual.species.death_std != 0.0
-                && individual.species.death_norm.is_some()
-            {
-                individual.death_distances.push(
-                    ((-1.0 * distance.powi(2)) / (2.0 * individual.species.death_std)).exp()
-                        / individual.species.death_norm.unwrap(),
-                )
-            } else {
-                individual.death_distances.push(0.0);
-            }
-            // assert_eq!(individual.birth_distances.len(), self.size);
-            // assert_eq!(individual.death_distances.len(), self.size);
+            update_distances(
+                &mut individual.birth_distances,
+                distance,
+                individual.species.birth_radius_max,
+                individual.species.birth_std,
+                individual.species.birth_norm,
+            );
+            update_distances(
+                &mut individual.death_distances,
+                distance,
+                individual.species.death_radius_max,
+                individual.species.death_std,
+                individual.species.death_norm,
+            );
         }
         child.birth_distances.push(0.0);
         child.death_distances.push(0.0);
@@ -441,11 +419,6 @@ impl Population {
               //     weighted_sample(&self.individuals, &weights, &mut rng)
               // }
         };
-        // let chosen_individual_id = self
-        //     .individuals
-        //     .iter()
-        //     .position(|x| *x == chosen_individual)
-        //     .unwrap();
 
         (chosen_event, chosen_individual, p_total)
     }
@@ -461,17 +434,8 @@ impl Population {
                 .collect::<Vec<(f64, f64)>>();
             species_individuals.push(coords.into_iter().unzip());
         }
-        // let history_vec: Vec<(usize, f64, f64)> = self
-        //     .individuals
-        //     .iter()
-        //     .map(|x| (x.species.id, x.x_coord, x.y_coord))
-        //     .collect();
-        // let (species_ids, x_coords, y_coords) = multiunzip(history_vec);
         Checkpoint {
             time: self.t,
-            // species_ids,
-            // x_coords,
-            // y_coords,
             species_individuals,
         }
     }
@@ -499,73 +463,13 @@ impl Population {
     }
 
     pub fn simulate(&mut self, max_t: f64) {
-        //}, data_path: PathBuf, n_bins: usize) {
-        // somulate the behaviour of the population over time
-        // let mut t_prev: f64 = 0.0;
-        // let prog = ProgressBar::new((max_t - 1.0) as u64);
-
         while self.t < max_t {
-            // save the 2d histogram to data path
-            // if t.floor() == t_prev.floor() + 1.0 {
-            //     let hist = self.get_hist(n_bins);
-            //     write_npy(
-            //         data_path.join(format!("{:0>4}.npy", (t.floor() as u64))),
-            //         &hist,
-            //     )
-            //     .unwrap();
-            // }
-
             let (checkpoint, p_total) = self.step();
-            // t_prev = t;
             self.increment_time(p_total);
-            // if t as u64 > prog.position() + 1 {
-            //     prog.inc(1);
-            // }
             self.history.checkpoints.push(checkpoint);
         }
-        // self.save_history();
         println!("Completed with {:?} steps", self.history.checkpoints.len());
     }
-
-    // pub fn save_history(&self) {
-    //     let mut file = File::create("data/history.json").unwrap();
-    //     let _ = file.write_all(
-    //         serde_json::to_string(&self.history.checkpoints)
-    //             .expect("Expected checkpoint to be serialisable")
-    //             .as_bytes(),
-    //     );
-    // }
-
-    // fn get_hist(&self, n_bins: usize) -> ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 3]>> {
-    //     let mut full_hist = Array3::<f64>::zeros((self.species_list.len(), n_bins + 2, n_bins + 2));
-    //     // : ArrayBase<&f64>, Dim<[usize; &self.species_list.len()]>> = vec![];
-    //     for (idx, species) in self.species_list.iter().enumerate() {
-    //         let mut layer_hist = ndhistogram!(
-    //             Uniform::new(n_bins, 0.0, 1.0),
-    //             Uniform::new(n_bins, 0.0, 1.0)
-    //         );
-    //         for individual in self
-    //             .individuals
-    //             .iter()
-    //             .filter(|individual| individual.species.id == species.id)
-    //         {
-    //             layer_hist.fill(&(individual.x_coord, individual.y_coord));
-    //         }
-    //         let species_layer: Array<f64, Dim<[usize; 1]>> =
-    //             ArrayBase::from_iter(layer_hist.values().cloned());
-    //         let species_layer_2d = species_layer
-    //             .into_shape((n_bins + 2, n_bins + 2))
-    //             .unwrap()
-    //             .clone();
-    //         full_hist
-    //             .slice_mut(s![idx, 0..n_bins + 2, 0..n_bins + 2])
-    //             .assign(&species_layer_2d);
-    //         full_hist /= self.individuals.len() as f64;
-    //     }
-    //     full_hist
-    //         .slice(s![0..self.species_list.len(), 1..n_bins + 1, 1..n_bins + 1])
-    //         .to_owned()
-    // }
 }
 
 fn weighted_sample<T>(choices: &[T], weights: &Vec<f64>, rng: &mut ThreadRng) -> T
