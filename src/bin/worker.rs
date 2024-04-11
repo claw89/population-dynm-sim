@@ -16,6 +16,7 @@ fn main() {
             serde_wasm_bindgen::from_value(msg.data()).unwrap();
         log!("worker: simulating");
         let mut population = Population::new(received_message.species_list);
+        population.compute_initial_distances();
         // population.simulate(received_message.max_t);
         while population.t < received_message.max_t {
             let (checkpoint, p_total) = population.step();
