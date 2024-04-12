@@ -42,3 +42,4 @@ serde-wasm-bindgen = "0.6.5"
 plotly = { version = "0.8.4", features = ["wasm"] }
 leptos_meta = { version = "0.5", features = ["csr"] }
 regex = "1.10.4"
+sprs = { version = "0.11.1", features = ["serde"] }

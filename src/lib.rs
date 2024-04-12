@@ -1,6 +1,7 @@
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
+use sprs::CsVec;
 use std::f64::consts::PI;
 
 #[derive(Serialize, Deserialize)]
@@ -115,8 +116,8 @@ struct Individual {
     p_move: f64,
     birth_neighbor_weight: f64,
     death_neighbor_weight: f64,
-    birth_distances: Vec<f64>,
-    death_distances: Vec<f64>,
+    birth_distances: CsVec<f64>,
+    death_distances: CsVec<f64>,
 }
 
 impl Individual {
@@ -131,8 +132,8 @@ impl Individual {
             p_move: 0.0,
             birth_neighbor_weight: 0.0,
             death_neighbor_weight: 0.0,
-            birth_distances: vec![],
-            death_distances: vec![],
+            birth_distances: CsVec::empty(1),
+            death_distances: CsVec::empty(1),
         }
     }
 
@@ -180,21 +181,32 @@ pub struct Population {
     pub t: f64,
 }
 
-fn get_weight(distance: f64, std: f64, norm: f64) -> f64 {
-    ((-1.0 * distance.powi(2)) / (2.0 * std)).exp() / norm
+fn get_weight(distance: f64, var: f64, norm: f64) -> f64 {
+    ((-1.0 * distance.powi(2)) / (2.0 * var)).exp() / norm
 }
 
-fn update_distances(
-    distances: &mut Vec<f64>,
-    distance: f64,
-    radius_max: f64,
-    std: f64,
-    norm: Option<f64>,
-) {
-    if distance < radius_max && std != 0.0 && norm.is_some() {
-        distances.push(get_weight(distance, std, norm.unwrap()))
-    } else {
-        distances.push(0.0);
+fn update_distances(distance: f64, individual: &mut Individual, event: Event, idx: usize) {
+    match event {
+        Event::Birth => {
+            let radius = individual.species.birth_radius_max;
+            let var = individual.species.birth_std.powi(2);
+            let norm = individual.species.birth_norm;
+            if distance < radius && var != 0.0 && norm.is_some() {
+                individual
+                    .birth_distances
+                    .append(idx, get_weight(distance, var, norm.unwrap()));
+            }
+        }
+        Event::Death => {
+            let radius = individual.species.death_radius_max;
+            let var = individual.species.death_std.powi(2);
+            let norm = individual.species.death_norm;
+            if distance < radius && var != 0.0 && norm.is_some() {
+                individual
+                    .death_distances
+                    .append(idx, get_weight(distance, var, norm.unwrap()));
+            }
+        }
     }
 }
 
@@ -206,23 +218,8 @@ impl Population {
             for second in second_individuals {
                 if first.id != second.id {
                     let distance = first.distance(second);
-                    update_distances(
-                        &mut first.birth_distances,
-                        distance,
-                        first.species.birth_radius_max,
-                        first.species.birth_std,
-                        first.species.birth_norm,
-                    );
-                    update_distances(
-                        &mut first.death_distances,
-                        distance,
-                        first.species.death_radius_max,
-                        first.species.death_std,
-                        first.species.death_norm,
-                    );
-                } else {
-                    first.birth_distances.push(0.0);
-                    first.death_distances.push(0.0);
+                    update_distances(distance, first, Event::Birth, second.id);
+                    update_distances(distance, first, Event::Death, second.id);
                 }
             }
         }
@@ -264,7 +261,7 @@ impl Population {
                     match individual.species.birth_norm {
                         Some(_) => {
                             individual.birth_neighbor_weight =
-                                individual.birth_distances.iter().sum::<f64>()
+                                individual.birth_distances.data().iter().sum::<f64>()
                                     / individual.species.birth_norm.unwrap();
                         }
                         None => individual.birth_neighbor_weight = 0.0,
@@ -276,7 +273,7 @@ impl Population {
                     match individual.species.death_norm {
                         Some(_) => {
                             individual.death_neighbor_weight =
-                                individual.death_distances.iter().sum::<f64>()
+                                individual.death_distances.data().iter().sum::<f64>()
                                     / individual.species.death_norm.unwrap();
                         }
                         None => individual.death_neighbor_weight = 0.0,
@@ -320,38 +317,12 @@ impl Population {
         // initialize child distances and update other individuals
         for individual in &mut self.individuals {
             let distance = child.distance(individual);
-            update_distances(
-                &mut child.birth_distances,
-                distance,
-                child.species.birth_radius_max,
-                child.species.birth_std,
-                child.species.birth_norm,
-            );
-            update_distances(
-                &mut child.death_distances,
-                distance,
-                child.species.death_radius_max,
-                child.species.death_std,
-                child.species.death_norm,
-            );
+            update_distances(distance, &mut child, Event::Birth, individual.id);
+            update_distances(distance, &mut child, Event::Death, individual.id);
 
-            update_distances(
-                &mut individual.birth_distances,
-                distance,
-                individual.species.birth_radius_max,
-                individual.species.birth_std,
-                individual.species.birth_norm,
-            );
-            update_distances(
-                &mut individual.death_distances,
-                distance,
-                individual.species.death_radius_max,
-                individual.species.death_std,
-                individual.species.death_norm,
-            );
+            update_distances(distance, individual, Event::Birth, child.id);
+            update_distances(distance, individual, Event::Death, child.id);
         }
-        child.birth_distances.push(0.0);
-        child.death_distances.push(0.0);
 
         // add child to vector of individuals
         self.individuals.push(child);
@@ -366,8 +337,18 @@ impl Population {
             .position(|x| *x == deceased)
             .unwrap();
         for individual in &mut self.individuals {
-            individual.birth_distances.remove(deceased_id);
-            individual.death_distances.remove(deceased_id);
+            let (birth_indices, birth_data): (Vec<usize>, Vec<f64>) = individual
+                .birth_distances
+                .iter()
+                .filter(|(idx, _)| *idx != deceased_id)
+                .unzip();
+            individual.birth_distances = CsVec::new(self.size, birth_indices, birth_data);
+            let (death_indices, death_data): (Vec<usize>, Vec<f64>) = individual
+                .death_distances
+                .iter()
+                .filter(|(idx, _)| *idx != deceased_id)
+                .unzip();
+            individual.death_distances = CsVec::new(self.size, death_indices, death_data);
         }
         self.individuals.remove(deceased_id);
         self.size -= 1;
