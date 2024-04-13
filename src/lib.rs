@@ -23,13 +23,17 @@ pub struct WorkerResponse {
     pub checkpoint: Checkpoint,
 }
 
+/// Enumerates the possible events that can occur
 #[derive(Clone, Copy)]
 pub enum Event {
+    /// An event in which a new individual is created
     Birth,
+    /// An event in which an individual is destroyed
     Death,
     // Move,
 }
 
+/// A Species object holding the parameters that individuals of this species will use
 #[derive(PartialEq, Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Species {
     pub id: usize,
@@ -52,6 +56,7 @@ pub struct Species {
 }
 
 impl Species {
+    /// Creates a new species; birth and death norms are calculated from the respective radius_max an std values
     pub fn new(
         id: usize,
         b0: f64,
@@ -105,6 +110,7 @@ impl Species {
     }
 }
 
+/// An individual member of the population, which belongs to a species 
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
 struct Individual {
     id: usize,

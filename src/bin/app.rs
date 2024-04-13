@@ -1,6 +1,7 @@
 use itertools::Itertools;
-use js_sys::Array;
+use js_sys::{Array, Object};
 use leptos::{html::Input, logging::log, *};
+use plotly::{Plot, Scatter};
 use population_dynm_sim::*;
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{
@@ -53,7 +54,45 @@ async fn load_species() -> Vec<Species> {
 }
 
 #[component]
-fn PlotlyChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
+fn PlotlyChart() -> impl IntoView {
+    let script = String::from(
+        "Plotly.newPlot('plotly_chart', {
+            'data': [],
+            'layout': {
+                'margin': {
+                    'l': 0,
+                    'r': 0,
+                    'b': 0,
+                    't': 0,
+                    'pad': 4
+                },
+                'showlegend': false,
+                'plot_bgcolor': '#dbdbdb',
+                'autosize': false,
+                'width': 400,
+                'height': 400,
+                'xaxis': {
+                    'range': [0.0, 1.0],
+                    'visible': false
+                },
+                'yaxis': {
+                    'range': [0.0, 1.0],
+                    'visible': false
+                }
+            },
+            'config': {}
+        });",
+    );
+
+    view! {
+        <script type="text/javascript">
+            {script}
+        </script>
+    }
+}
+
+#[component]
+fn UpdateChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
     let mut traces = vec![] as Vec<String>;
     for (idx, (x_coords, y_coords)) in coords.clone().iter().enumerate() {
         let (r, g, b) = COLORS[idx];
@@ -69,38 +108,34 @@ fn PlotlyChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
         ));
     }
 
+    let mut n_traces = 0;
+    let document = web_sys::window().unwrap().document().unwrap();
+    let scatter_layer = document.get_elements_by_class_name("scatterlayer mlayer");
+    if scatter_layer.length() > 0 {
+        assert_eq!(scatter_layer.length(), 1);
+        n_traces = scatter_layer.item(0).unwrap().children().length();
+    }
+
+    let mut delete_traces = String::from("");
+    if n_traces > 0 {
+        delete_traces = (0..n_traces)
+            .collect_vec()
+            .iter()
+            .map(|t| format!("{:?}", t))
+            .collect::<Vec<String>>()
+            .join(", ");
+    }
+
     let script = format!(
-        "Plotly.newPlot('plotly_chart', {{
-            'data': [{}],
-            'layout': {{
-                'margin': {{
-                    'l': 0,
-                    'r': 0,
-                    'b': 0,
-                    't': 0,
-                    'pad': 4
-                }},
-                'showlegend': false,
-                'plot_bgcolor': '#dbdbdb',
-                'autosize': false,
-                'width': 400,
-                'height': 400,
-                'xaxis': {{
-                    'range': [0.0, 1.0],
-                    'visible': false
-                }},
-                'yaxis': {{
-                    'range': [0.0, 1.0],
-                    'visible': false
-                }}
-            }},
-            'config': {{}}
-        }});",
+        "
+        Plotly.deleteTraces('plotly_chart', [{}]);
+        Plotly.addTraces('plotly_chart', [{}]);
+        ",
+        delete_traces,
         traces.join(", ")
     );
 
     view! {
-        <div  id="plotly_chart" style="width=500px"></div>
         <script type="text/javascript">
             {script}
         </script>
@@ -120,6 +155,7 @@ fn App() -> impl IntoView {
     let (history_signal, set_history_signal) = create_signal::<Vec<Checkpoint>>(vec![]);
     let (species_detail, set_species_detail) = create_signal(0);
     let (checked_species, set_checked_species) = create_signal::<Vec<usize>>(vec![]);
+    // let (old_traces, set_old_traces) = create_signal::<usize>(0);
 
     let onmessage = Closure::wrap(Box::new(move |msg: MessageEvent| {
         let response: WorkerResponse =
@@ -131,7 +167,7 @@ fn App() -> impl IntoView {
             WorkerStatus::PENDING => {
                 set_history_signal.update(|h| h.push(response.checkpoint.clone()));
                 // update progress bar
-                set_progress.set(response.checkpoint.time);
+                // set_progress.set(response.checkpoint.time);
                 set_distribution(&response.checkpoint, set_coords);
             }
             WorkerStatus::COMPLETE => {
@@ -319,7 +355,11 @@ fn App() -> impl IntoView {
         </form>
 
         <h3>"Viewer"</h3>
-        {move || view! {<PlotlyChart coords={coords.get()}/>}}
+        <div  id="plotly_chart" style="width=500px"></div>
+        <PlotlyChart />
+        {move || view! {<UpdateChart coords={coords.get()}/>}}
+
+
 
         <h3  style="width: 500px">"Replay"</h3>
         <form  style="width: 500px" on:input=move |_| {
