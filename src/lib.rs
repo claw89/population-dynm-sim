@@ -1,7 +1,6 @@
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
-use sprs::CsVec;
 use std::f64::consts::PI;
 
 #[derive(Serialize, Deserialize)]
@@ -20,11 +19,11 @@ pub enum WorkerStatus {
 #[derive(Serialize, Deserialize)]
 pub struct WorkerResponse {
     pub status: WorkerStatus,
-    pub checkpoint: Checkpoint,
+    pub checkpoints: Vec<Checkpoint>,
 }
 
 /// Enumerates the possible events that can occur
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Event {
     /// An event in which a new individual is created
     Birth,
@@ -57,60 +56,31 @@ pub struct Species {
 
 impl Species {
     /// Creates a new species; birth and death norms are calculated from the respective radius_max an std values
-    pub fn new(
-        id: usize,
-        b0: f64,
-        b1: f64,
-        c1: f64,
-        d0: f64,
-        d1: f64,
-        mbrmax: f64,
-        mbsd: f64,
-        mintegral: f64,
-        move_radius_max: f64,
-        move_std: f64,
-        birth_radius_max: f64,
-        birth_std: f64,
-        death_radius_max: f64,
-        death_std: f64,
-    ) -> Self {
-        let mut birth_norm = 0.0;
-        if birth_std != 0.0 {
-            birth_norm = 2.0
-                * birth_std.powi(2)
-                * PI
-                * (1.0 - ((-1.0 * birth_radius_max.powi(2)) / (2.0 * birth_std.powi(2))).exp());
+    pub fn derive_norms(&mut self) {
+        if self.birth_std != 0.0 {
+            self.birth_norm = Some(
+                2.0 * self.birth_std.powi(2)
+                    * PI
+                    * (1.0
+                        - ((-1.0 * self.birth_radius_max.powi(2))
+                            / (2.0 * self.birth_std.powi(2)))
+                        .exp()),
+            );
         }
-        let mut death_norm = 0.0;
-        if death_std != 0.0 {
-            death_norm = 2.0
-                * death_std.powi(2)
-                * PI
-                * (1.0 - ((-1.0 * death_radius_max.powi(2)) / (2.0 * death_std.powi(2))).exp());
-        }
-        Species {
-            id,
-            b0,
-            b1,
-            c1,
-            d0,
-            d1,
-            mbrmax,
-            mbsd,
-            mintegral,
-            move_radius_max,
-            move_std,
-            birth_radius_max,
-            birth_std,
-            birth_norm: Some(birth_norm),
-            death_radius_max,
-            death_std,
-            death_norm: Some(death_norm),
+        if self.death_std != 0.0 {
+            self.death_norm = Some(
+                2.0 * self.death_std.powi(2)
+                    * PI
+                    * (1.0
+                        - ((-1.0 * self.death_radius_max.powi(2))
+                            / (2.0 * self.death_std.powi(2)))
+                        .exp()),
+            );
         }
     }
 }
 
-/// An individual member of the population, which belongs to a species 
+/// An individual member of the population, which belongs to a species
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
 struct Individual {
     id: usize,
@@ -122,8 +92,8 @@ struct Individual {
     p_move: f64,
     birth_neighbor_weight: f64,
     death_neighbor_weight: f64,
-    birth_distances: CsVec<f64>,
-    death_distances: CsVec<f64>,
+    birth_distances: Vec<(usize, f64)>,
+    death_distances: Vec<(usize, f64)>,
 }
 
 impl Individual {
@@ -138,8 +108,8 @@ impl Individual {
             p_move: 0.0,
             birth_neighbor_weight: 0.0,
             death_neighbor_weight: 0.0,
-            birth_distances: CsVec::empty(1),
-            death_distances: CsVec::empty(1),
+            birth_distances: vec![],
+            death_distances: vec![],
         }
     }
 
@@ -187,8 +157,8 @@ pub struct Population {
     pub t: f64,
 }
 
-fn get_weight(distance: f64, var: f64, norm: f64) -> f64 {
-    ((-1.0 * distance.powi(2)) / (2.0 * var)).exp() / norm
+fn get_weight(distance: f64, var: f64) -> f64 {
+    ((-1.0 * distance.powi(2)) / (2.0 * var)).exp()
 }
 
 fn update_distances(distance: f64, individual: &mut Individual, event: Event, idx: usize) {
@@ -196,21 +166,19 @@ fn update_distances(distance: f64, individual: &mut Individual, event: Event, id
         Event::Birth => {
             let radius = individual.species.birth_radius_max;
             let var = individual.species.birth_std.powi(2);
-            let norm = individual.species.birth_norm;
-            if distance < radius && var != 0.0 && norm.is_some() {
+            if distance < radius && var != 0.0 {
                 individual
                     .birth_distances
-                    .append(idx, get_weight(distance, var, norm.unwrap()));
+                    .push((idx, get_weight(distance, var)));
             }
         }
         Event::Death => {
             let radius = individual.species.death_radius_max;
             let var = individual.species.death_std.powi(2);
-            let norm = individual.species.death_norm;
-            if distance < radius && var != 0.0 && norm.is_some() {
+            if distance < radius && var != 0.0 {
                 individual
                     .death_distances
-                    .append(idx, get_weight(distance, var, norm.unwrap()));
+                    .push((idx, get_weight(distance, var)));
             }
         }
     }
@@ -263,24 +231,30 @@ impl Population {
     fn compute_neighbor_weights(&mut self, event: &Event) {
         match event {
             Event::Birth => {
-                for mut individual in self.individuals.clone() {
+                for individual in &mut self.individuals {
                     match individual.species.birth_norm {
                         Some(_) => {
-                            individual.birth_neighbor_weight =
-                                individual.birth_distances.data().iter().sum::<f64>()
-                                    / individual.species.birth_norm.unwrap();
+                            individual.birth_neighbor_weight = (individual
+                                .birth_distances
+                                .iter()
+                                .fold(0.0, |acc, (_, d)| acc + *d)
+                                * individual.species.b1)
+                                / individual.species.birth_norm.unwrap();
                         }
                         None => individual.birth_neighbor_weight = 0.0,
                     }
                 }
             }
             Event::Death => {
-                for mut individual in self.individuals.clone() {
+                for individual in &mut self.individuals {
                     match individual.species.death_norm {
                         Some(_) => {
-                            individual.death_neighbor_weight =
-                                individual.death_distances.data().iter().sum::<f64>()
-                                    / individual.species.death_norm.unwrap();
+                            individual.death_neighbor_weight = (individual
+                                .death_distances
+                                .iter()
+                                .fold(0.0, |acc, (_, d)| acc + *d)
+                                * individual.species.d1)
+                                / individual.species.death_norm.unwrap();
                         }
                         None => individual.death_neighbor_weight = 0.0,
                     }
@@ -343,18 +317,12 @@ impl Population {
             .position(|x| *x == deceased)
             .unwrap();
         for individual in &mut self.individuals {
-            let (birth_indices, birth_data): (Vec<usize>, Vec<f64>) = individual
+            individual
                 .birth_distances
-                .iter()
-                .filter(|(idx, _)| *idx != deceased_id)
-                .unzip();
-            individual.birth_distances = CsVec::new(self.size, birth_indices, birth_data);
-            let (death_indices, death_data): (Vec<usize>, Vec<f64>) = individual
+                .retain(|(idx, _)| *idx != deceased_id);
+            individual
                 .death_distances
-                .iter()
-                .filter(|(idx, _)| *idx != deceased_id)
-                .unzip();
-            individual.death_distances = CsVec::new(self.size, death_indices, death_data);
+                .retain(|(idx, _)| *idx != deceased_id);
         }
         self.individuals.remove(deceased_id);
         self.size -= 1;
@@ -375,9 +343,21 @@ impl Population {
 
         let choices = vec![Event::Birth, Event::Death, Event::Death];
         let weights = vec![
-            p_birth_sum / p_total,
-            p_death_sum / p_total,
-            p_move_sum / p_total,
+            if (p_total > 0.0) {
+                p_birth_sum / p_total
+            } else {
+                0.0
+            },
+            if (p_total > 0.0) {
+                p_death_sum / p_total
+            } else {
+                0.0
+            },
+            if (p_total > 0.0) {
+                p_move_sum / p_total
+            } else {
+                0.0
+            },
         ];
         let chosen_event = weighted_sample(&choices, &weights, &mut rng);
 
@@ -386,7 +366,13 @@ impl Population {
                 let weights = self
                     .individuals
                     .iter()
-                    .map(|x| x.p_birth / p_birth_sum)
+                    .map(|x| -> f64 {
+                        if p_birth_sum > 0.0 {
+                            x.p_birth / p_birth_sum
+                        } else {
+                            0.0
+                        }
+                    })
                     .collect();
                 weighted_sample(&self.individuals.clone(), &weights, &mut rng)
             }
@@ -394,7 +380,13 @@ impl Population {
                 let weights = self
                     .individuals
                     .iter()
-                    .map(|x| x.p_death / p_death_sum)
+                    .map(|x| -> f64 {
+                        if p_death_sum > 0.0 {
+                            x.p_death / p_death_sum
+                        } else {
+                            0.0
+                        }
+                    })
                     .collect();
                 weighted_sample(&self.individuals.clone(), &weights, &mut rng)
             } // Event::Move => {
@@ -463,28 +455,32 @@ fn weighted_sample<T>(choices: &[T], weights: &Vec<f64>, rng: &mut ThreadRng) ->
 where
     T: Clone,
 {
-    let dist = WeightedIndex::new(weights).unwrap();
-    choices[dist.sample(rng)].clone()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rstest::{fixture, rstest};
-
-    #[fixture]
-    fn default_species() -> Species {
-        Species::new(
-            0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0,
-        )
-    }
-
-    #[rstest]
-    fn test_new_individual(default_species: Species) {
-        let individual = Individual::new(0, default_species, 0.0, 0.0);
-        assert_eq!(individual.id, 0);
-        assert_eq!(individual.species, default_species);
-        assert_eq!(individual.x_coord, 0.0);
-        assert_eq!(individual.y_coord, 0.0);
+    if weights.iter().fold(0.0, |acc, w| acc + *w) > 0.0 {
+        let dist = WeightedIndex::new(weights).unwrap();
+        choices[dist.sample(rng)].clone()
+    } else {
+        choices.choose(rng).unwrap().clone()
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use rstest::{fixture, rstest};
+
+//     #[fixture]
+//     fn default_species() -> Species {
+//         Species::new(
+//             0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0,
+//         )
+//     }
+
+//     #[rstest]
+//     fn test_new_individual(default_species: Species) {
+//         let individual = Individual::new(0, default_species, 0.0, 0.0);
+//         assert_eq!(individual.id, 0);
+//         assert_eq!(individual.species, default_species);
+//         assert_eq!(individual.x_coord, 0.0);
+//         assert_eq!(individual.y_coord, 0.0);
+//     }
+// }

@@ -18,32 +18,39 @@ fn main() {
         let mut population = Population::new(received_message.species_list);
         population.compute_initial_distances();
         // population.simulate(received_message.max_t);
+        let mut checkpoint_buffer: Vec<Checkpoint> = vec![];
+        let mut previous_time = 0.0;
         while population.t < received_message.max_t {
             let (checkpoint, p_total) = population.step();
             population.increment_time(p_total);
             population.history.checkpoints.push(checkpoint.clone());
+            checkpoint_buffer.push(checkpoint.clone());
 
-            // Post intermediate result
-            let status = WorkerResponse {
-                status: WorkerStatus::PENDING,
-                checkpoint: checkpoint.clone(),
-            };
-            scope_clone
-                .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
-                .unwrap();
+            if population.t > previous_time + 1.0 {
+                // Post intermediate result
+                log!(
+                    "worker: returning intermediate results. Time = {:?}; Buffer size = {:?}",
+                    population.t,
+                    checkpoint_buffer.len()
+                );
+                let status = WorkerResponse {
+                    status: WorkerStatus::PENDING,
+                    checkpoints: checkpoint_buffer.clone(),
+                };
+                scope_clone
+                    .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
+                    .unwrap();
+
+                checkpoint_buffer.clear();
+                previous_time = population.t.floor();
+            }
         }
         log!("worker: simulation complete");
 
         // Post final result
         let status = WorkerResponse {
             status: WorkerStatus::COMPLETE,
-            checkpoint: Checkpoint {
-                time: 0.0,
-                // species_ids: vec![],
-                // x_coords: vec![],
-                // y_coords: vec![],
-                species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
-            },
+            checkpoints: vec![],
         };
         scope_clone
             .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())
@@ -54,13 +61,7 @@ fn main() {
 
     let status = WorkerResponse {
         status: WorkerStatus::INITIALIZED,
-        checkpoint: Checkpoint {
-            time: 0.0,
-            // species_ids: vec![],
-            // x_coords: vec![],
-            // y_coords: vec![],
-            species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
-        },
+        checkpoints: vec![],
     };
     scope
         .post_message(&serde_wasm_bindgen::to_value(&status).unwrap())

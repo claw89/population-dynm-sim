@@ -49,7 +49,11 @@ async fn load_species() -> Vec<Species> {
         .delimiter(b',')
         .from_reader(species_bytes.as_bytes());
     rdr.deserialize::<Species>()
-        .map(|x| -> Species { x.unwrap() })
+        .map(|x| -> Species {
+            let mut species = x.unwrap();
+            species.derive_norms();
+            species
+        })
         .collect_vec()
 }
 
@@ -165,10 +169,10 @@ fn App() -> impl IntoView {
                 log!("app: worker ready to receive requests");
             }
             WorkerStatus::PENDING => {
-                set_history_signal.update(|h| h.push(response.checkpoint.clone()));
+                set_history_signal.update(|h| h.append(&mut response.checkpoints.clone()));
                 // update progress bar
-                // set_progress.set(response.checkpoint.time);
-                set_distribution(&response.checkpoint, set_coords);
+                set_progress.set(response.checkpoints.last().unwrap().time);
+                set_distribution(response.checkpoints.last().unwrap(), set_coords);
             }
             WorkerStatus::COMPLETE => {
                 log!("app: simulation completed");
