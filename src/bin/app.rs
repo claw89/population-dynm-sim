@@ -96,9 +96,9 @@ fn PlotlyChart() -> impl IntoView {
 }
 
 #[component]
-fn UpdateChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
+fn UpdateChart(coords: Vec<(usize, Vec<f64>, Vec<f64>)>) -> impl IntoView {
     let mut traces = vec![] as Vec<String>;
-    for (idx, (x_coords, y_coords)) in coords.clone().iter().enumerate() {
+    for (idx, x_coords, y_coords) in coords.into_iter() {
         let (r, g, b) = COLORS[idx];
         traces.push(format!(
             "{{
@@ -106,7 +106,9 @@ fn UpdateChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
                 'mode': 'markers',
                 'x': {:?},
                 'y': {:?},
-                'fillcolor': 'rgb({r}, {g}, {b})'
+                marker: {{
+                  'color': 'rgb({r}, {g}, {b})',
+                }}
             }}",
             x_coords, y_coords
         ));
@@ -146,7 +148,10 @@ fn UpdateChart(coords: Vec<(Vec<f64>, Vec<f64>)>) -> impl IntoView {
     }
 }
 
-fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<(Vec<f64>, Vec<f64>)>>) {
+fn set_distribution(
+    checkpoint: &Checkpoint,
+    set_coords: WriteSignal<Vec<(usize, Vec<f64>, Vec<f64>)>>,
+) {
     set_coords.set(checkpoint.species_individuals.clone());
 }
 
@@ -155,7 +160,7 @@ fn App() -> impl IntoView {
     let worker = new_worker("worker");
     let (progress, set_progress) = create_signal::<f64>(0.0);
     let (max_t, set_max_t) = create_signal::<f64>(10.0);
-    let (coords, set_coords) = create_signal::<Vec<(Vec<f64>, Vec<f64>)>>(vec![]);
+    let (coords, set_coords) = create_signal::<Vec<(usize, Vec<f64>, Vec<f64>)>>(vec![]);
     let (history_signal, set_history_signal) = create_signal::<Vec<Checkpoint>>(vec![]);
     let (species_detail, set_species_detail) = create_signal(0);
     let (checked_species, set_checked_species) = create_signal::<Vec<usize>>(vec![]);

@@ -1,3 +1,4 @@
+use leptos::logging::log;
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
@@ -140,7 +141,7 @@ pub struct Checkpoint {
     // pub species_ids: Vec<usize>,
     // pub x_coords: Vec<f64>,
     // pub y_coords: Vec<f64>,
-    pub species_individuals: Vec<(Vec<f64>, Vec<f64>)>,
+    pub species_individuals: Vec<(usize, Vec<f64>, Vec<f64>)>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -213,7 +214,7 @@ impl Population {
         }
         let initial_checkpoint = Checkpoint {
             time: 0.0,
-            species_individuals: vec![] as Vec<(Vec<f64>, Vec<f64>)>,
+            species_individuals: vec![] as Vec<(usize, Vec<f64>, Vec<f64>)>,
         };
 
         // instantiate population
@@ -403,7 +404,7 @@ impl Population {
     }
 
     fn get_checkpoint(&self) -> Checkpoint {
-        let mut species_individuals = vec![] as Vec<(Vec<f64>, Vec<f64>)>;
+        let mut species_individuals = vec![] as Vec<(usize, Vec<f64>, Vec<f64>)>;
         for species in self.species_list.clone() {
             let coords: Vec<(f64, f64)> = self
                 .individuals
@@ -411,7 +412,8 @@ impl Population {
                 .filter(|x| x.species.id == species.id)
                 .map(|x| (x.x_coord, x.y_coord))
                 .collect::<Vec<(f64, f64)>>();
-            species_individuals.push(coords.into_iter().unzip());
+            let (x_coords, y_coords) = coords.into_iter().unzip();
+            species_individuals.push((species.id, x_coords, y_coords));
         }
         Checkpoint {
             time: self.t,
