@@ -1,7 +1,6 @@
 use itertools::Itertools;
-use js_sys::{Array, Object};
+use js_sys::Array;
 use leptos::{html::Input, logging::log, *};
-use plotly::{Plot, Scatter};
 use population_dynm_sim::*;
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{
@@ -39,7 +38,7 @@ fn new_worker(name: &str) -> Worker {
 
 async fn load_species() -> Vec<Species> {
     let species_bytes =
-        reqwest::get("https://claw89.github.io/population-sim-view/data/species_params.csv")
+        reqwest::get("http://127.0.0.1:8080/population-sim-view/data/species_params.csv")
             .await
             .unwrap()
             .text()
@@ -96,10 +95,10 @@ fn PlotlyChart() -> impl IntoView {
 }
 
 #[component]
-fn UpdateChart(coords: Vec<(usize, Vec<f64>, Vec<f64>)>) -> impl IntoView {
+fn UpdateChart(coords: Vec<SpeciesCoords>) -> impl IntoView {
     let mut traces = vec![] as Vec<String>;
-    for (idx, x_coords, y_coords) in coords.into_iter() {
-        let (r, g, b) = COLORS[idx];
+    for species_coords in coords.into_iter() {
+        let (r, g, b) = COLORS[species_coords.species_id];
         traces.push(format!(
             "{{
                 'type': 'scatter',
@@ -110,7 +109,7 @@ fn UpdateChart(coords: Vec<(usize, Vec<f64>, Vec<f64>)>) -> impl IntoView {
                   'color': 'rgb({r}, {g}, {b})',
                 }}
             }}",
-            x_coords, y_coords
+            species_coords.x_coords, species_coords.y_coords
         ));
     }
 
@@ -148,10 +147,7 @@ fn UpdateChart(coords: Vec<(usize, Vec<f64>, Vec<f64>)>) -> impl IntoView {
     }
 }
 
-fn set_distribution(
-    checkpoint: &Checkpoint,
-    set_coords: WriteSignal<Vec<(usize, Vec<f64>, Vec<f64>)>>,
-) {
+fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<SpeciesCoords>>) {
     set_coords.set(checkpoint.species_individuals.clone());
 }
 
@@ -160,7 +156,7 @@ fn App() -> impl IntoView {
     let worker = new_worker("worker");
     let (progress, set_progress) = create_signal::<f64>(0.0);
     let (max_t, set_max_t) = create_signal::<f64>(10.0);
-    let (coords, set_coords) = create_signal::<Vec<(usize, Vec<f64>, Vec<f64>)>>(vec![]);
+    let (coords, set_coords) = create_signal::<Vec<SpeciesCoords>>(vec![]);
     let (history_signal, set_history_signal) = create_signal::<Vec<Checkpoint>>(vec![]);
     let (species_detail, set_species_detail) = create_signal(0);
     let (checked_species, set_checked_species) = create_signal::<Vec<usize>>(vec![]);

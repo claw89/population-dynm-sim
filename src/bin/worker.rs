@@ -23,16 +23,10 @@ fn main() {
         while population.t < received_message.max_t {
             let (checkpoint, p_total) = population.step();
             population.increment_time(p_total);
-            population.history.checkpoints.push(checkpoint.clone());
             checkpoint_buffer.push(checkpoint.clone());
 
             if population.t > previous_time + 1.0 {
                 // Post intermediate result
-                log!(
-                    "worker: returning intermediate results. Time = {:?}; Buffer size = {:?}",
-                    population.t,
-                    checkpoint_buffer.len()
-                );
                 let status = WorkerResponse {
                     status: WorkerStatus::PENDING,
                     checkpoints: checkpoint_buffer.clone(),

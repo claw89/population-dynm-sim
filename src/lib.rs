@@ -1,4 +1,3 @@
-use leptos::logging::log;
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
@@ -8,6 +7,19 @@ use std::f64::consts::PI;
 pub struct WorkerMessageReceived {
     pub species_list: Vec<Species>,
     pub max_t: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SpeciesCoords {
+    pub species_id: usize,
+    pub x_coords: Vec<f64>,
+    pub y_coords: Vec<f64>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Checkpoint {
+    pub time: f64,
+    pub species_individuals: Vec<SpeciesCoords>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -136,70 +148,14 @@ impl Individual {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Checkpoint {
-    pub time: f64,
-    // pub species_ids: Vec<usize>,
-    // pub x_coords: Vec<f64>,
-    // pub y_coords: Vec<f64>,
-    pub species_individuals: Vec<(usize, Vec<f64>, Vec<f64>)>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct History {
-    pub checkpoints: Vec<Checkpoint>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
 pub struct Population {
     species_list: Vec<Species>,
     individuals: Vec<Individual>,
     pub size: usize,
-    pub history: History,
     pub t: f64,
 }
 
-fn get_weight(distance: f64, var: f64) -> f64 {
-    ((-1.0 * distance.powi(2)) / (2.0 * var)).exp()
-}
-
-fn update_distances(distance: f64, individual: &mut Individual, event: Event, idx: usize) {
-    match event {
-        Event::Birth => {
-            let radius = individual.species.birth_radius_max;
-            let var = individual.species.birth_std.powi(2);
-            if distance < radius && var != 0.0 {
-                individual
-                    .birth_distances
-                    .push((idx, get_weight(distance, var)));
-            }
-        }
-        Event::Death => {
-            let radius = individual.species.death_radius_max;
-            let var = individual.species.death_std.powi(2);
-            if distance < radius && var != 0.0 {
-                individual
-                    .death_distances
-                    .push((idx, get_weight(distance, var)));
-            }
-        }
-    }
-}
-
 impl Population {
-    pub fn compute_initial_distances(&mut self) {
-        let second_individuals = &self.individuals.clone();
-
-        for first in &mut self.individuals {
-            for second in second_individuals {
-                if first.id != second.id {
-                    let distance = first.distance(second);
-                    update_distances(distance, first, Event::Birth, second.id);
-                    update_distances(distance, first, Event::Death, second.id);
-                }
-            }
-        }
-    }
-
     pub fn new(species_list: Vec<Species>) -> Self {
         // create individuals for each species
         let mut individuals: Vec<Individual> = vec![];
@@ -212,20 +168,27 @@ impl Population {
                 idx += 1;
             }
         }
-        let initial_checkpoint = Checkpoint {
-            time: 0.0,
-            species_individuals: vec![] as Vec<(usize, Vec<f64>, Vec<f64>)>,
-        };
 
         // instantiate population
         Population {
             species_list,
             individuals,
             size: idx,
-            history: History {
-                checkpoints: vec![initial_checkpoint],
-            },
             t: 0.0,
+        }
+    }
+
+    pub fn compute_initial_distances(&mut self) {
+        let second_individuals = &self.individuals.clone();
+
+        for first in &mut self.individuals {
+            for second in second_individuals {
+                if first.id != second.id {
+                    let distance = first.distance(second);
+                    update_distances(distance, first, Event::Birth, second.id);
+                    update_distances(distance, first, Event::Death, second.id);
+                }
+            }
         }
     }
 
@@ -343,23 +306,15 @@ impl Population {
         let mut rng = rand::thread_rng();
 
         let choices = vec![Event::Birth, Event::Death, Event::Death];
-        let weights = vec![
-            if (p_total > 0.0) {
-                p_birth_sum / p_total
-            } else {
-                0.0
-            },
-            if (p_total > 0.0) {
-                p_death_sum / p_total
-            } else {
-                0.0
-            },
-            if (p_total > 0.0) {
-                p_move_sum / p_total
-            } else {
-                0.0
-            },
-        ];
+        let weights = if p_total > 0.0 {
+            vec![
+                p_birth_sum / p_total,
+                p_death_sum / p_total,
+                p_move_sum / p_total,
+            ]
+        } else {
+            vec![0.0, 0.0, 0.0]
+        };
         let chosen_event = weighted_sample(&choices, &weights, &mut rng);
 
         let chosen_individual = match chosen_event {
@@ -404,7 +359,7 @@ impl Population {
     }
 
     fn get_checkpoint(&self) -> Checkpoint {
-        let mut species_individuals = vec![] as Vec<(usize, Vec<f64>, Vec<f64>)>;
+        let mut species_individuals = vec![] as Vec<SpeciesCoords>;
         for species in self.species_list.clone() {
             let coords: Vec<(f64, f64)> = self
                 .individuals
@@ -413,7 +368,11 @@ impl Population {
                 .map(|x| (x.x_coord, x.y_coord))
                 .collect::<Vec<(f64, f64)>>();
             let (x_coords, y_coords) = coords.into_iter().unzip();
-            species_individuals.push((species.id, x_coords, y_coords));
+            species_individuals.push(SpeciesCoords {
+                species_id: species.id,
+                x_coords,
+                y_coords,
+            });
         }
         Checkpoint {
             time: self.t,
@@ -442,15 +401,6 @@ impl Population {
         assert!(delta_t > 0.0);
         self.t += delta_t;
     }
-
-    pub fn simulate(&mut self, max_t: f64) {
-        while self.t < max_t {
-            let (checkpoint, p_total) = self.step();
-            self.increment_time(p_total);
-            self.history.checkpoints.push(checkpoint);
-        }
-        println!("Completed with {:?} steps", self.history.checkpoints.len());
-    }
 }
 
 fn weighted_sample<T>(choices: &[T], weights: &Vec<f64>, rng: &mut ThreadRng) -> T
@@ -465,24 +415,29 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use rstest::{fixture, rstest};
+fn get_weight(distance: f64, var: f64) -> f64 {
+    ((-1.0 * distance.powi(2)) / (2.0 * var)).exp()
+}
 
-//     #[fixture]
-//     fn default_species() -> Species {
-//         Species::new(
-//             0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0,
-//         )
-//     }
-
-//     #[rstest]
-//     fn test_new_individual(default_species: Species) {
-//         let individual = Individual::new(0, default_species, 0.0, 0.0);
-//         assert_eq!(individual.id, 0);
-//         assert_eq!(individual.species, default_species);
-//         assert_eq!(individual.x_coord, 0.0);
-//         assert_eq!(individual.y_coord, 0.0);
-//     }
-// }
+fn update_distances(distance: f64, individual: &mut Individual, event: Event, idx: usize) {
+    match event {
+        Event::Birth => {
+            let radius = individual.species.birth_radius_max;
+            let var = individual.species.birth_std.powi(2);
+            if distance < radius && var != 0.0 {
+                individual
+                    .birth_distances
+                    .push((idx, get_weight(distance, var)));
+            }
+        }
+        Event::Death => {
+            let radius = individual.species.death_radius_max;
+            let var = individual.species.death_std.powi(2);
+            if distance < radius && var != 0.0 {
+                individual
+                    .death_distances
+                    .push((idx, get_weight(distance, var)));
+            }
+        }
+    }
+}
