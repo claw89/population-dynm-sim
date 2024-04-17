@@ -1,3 +1,6 @@
+use itertools::Itertools;
+use ndarray::{s, Array, Array3, ArrayBase, Dim};
+use ndhistogram::{axis::Uniform, ndhistogram, Histogram};
 use rand::prelude::*;
 use rand_distr::{Normal, WeightedIndex};
 use serde::{Deserialize, Serialize};
@@ -20,6 +23,7 @@ pub struct SpeciesCoords {
 pub struct Checkpoint {
     pub time: f64,
     pub species_individuals: Vec<SpeciesCoords>,
+    pub heatmap: Vec<Vec<Vec<f64>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -377,6 +381,7 @@ impl Population {
         Checkpoint {
             time: self.t,
             species_individuals,
+            heatmap: self.get_heatmap(16),
         }
     }
 
@@ -400,6 +405,51 @@ impl Population {
         let delta_t: f64 = (-1.0 / p_total) * (1.0 - rng.gen::<f64>()).ln();
         assert!(delta_t > 0.0);
         self.t += delta_t;
+    }
+
+    pub fn get_heatmap(&self, n_bins: usize) -> Vec<Vec<Vec<f64>>> {
+        let mut full_heatmap: Vec<Vec<Vec<f64>>> = vec![];
+        // : ArrayBase<&f64>, Dim<[usize; &self.species_list.len()]>> = vec![];
+        for (idx, species) in self.species_list.iter().enumerate() {
+            // let heatmap = Array2::<f64>::zeros(n_bins + 2, n_bins + 2);
+            let mut layer_heatmap = ndhistogram!(
+                Uniform::new(n_bins, 0.0, 1.0),
+                Uniform::new(n_bins, 0.0, 1.0)
+            );
+            for individual in self
+                .individuals
+                .iter()
+                .filter(|individual| individual.species.id == species.id)
+            {
+                layer_heatmap.fill(&(individual.x_coord, individual.y_coord));
+            }
+            let heatmap_slices: Vec<Vec<f64>> = layer_heatmap
+                .values()
+                .cloned()
+                .collect::<Vec<f64>>()
+                .chunks(n_bins + 2)
+                .map(|c| (&c.to_vec()[1..n_bins]).to_vec())
+                .enumerate()
+                .filter(|(idx, _)| *idx != 0 && *idx != n_bins)
+                .map(|(_, v)| v)
+                .collect();
+            full_heatmap.push(heatmap_slices)
+            // let species_layer: Array<f64, Dim<[usize; 1]>> =
+            //     ArrayBase::from_iter(layer_heatmap.values().cloned());
+            // let species_layer_2d = species_layer
+            //     .into_shape((n_bins + 2, n_bins + 2))
+            //     .unwrap()
+            //     .clone();
+            // full_hist
+            //     .slice_mut(s![idx, 0..n_bins + 2, 0..n_bins + 2])
+            //     .assign(&species_layer_2d);
+            // full_hist /= self.individuals.len() as f64;
+        }
+        full_heatmap
+        // full_hist
+        //     .slice(s![0..self.species_list.len(), 1..n_bins + 1, 1..n_bins + 1])
+        //     .to_owned()
+        //     .into_raw_vec()
     }
 }
 

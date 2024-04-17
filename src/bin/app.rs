@@ -64,8 +64,9 @@ async fn load_species() -> Vec<Species> {
 }
 
 #[component]
-fn PlotlyChart(div_id: String) -> impl IntoView {
+fn PlotlyChart(div_id: String, size: (f64, f64)) -> impl IntoView {
     // A script component that generates an emply plotly chart
+    let (min, max) = size;
     let script = format!(
         "Plotly.newPlot('{}', {{
             'data': [],
@@ -83,17 +84,17 @@ fn PlotlyChart(div_id: String) -> impl IntoView {
                 'width': 400,
                 'height': 400,
                 'xaxis': {{
-                    'range': [0.0, 1.0],
+                    'range': [{}, {}],
                     'visible': false
                 }},
                 'yaxis': {{
-                    'range': [0.0, 1.0],
+                    'range': [{}, {}],
                     'visible': false
                 }}
             }},
             'config': {{}}
         }});",
-        div_id
+        div_id, min, max, min, max
     );
 
     view! {
@@ -159,6 +160,44 @@ fn UpdateChart(coords: Vec<SpeciesCoords>, div_id: String) -> impl IntoView {
     }
 }
 
+#[component]
+fn UpdateHeatmap(
+    heatmap: Vec<Vec<f64>>,
+    div_id: String,
+    history: Vec<Checkpoint>,
+) -> impl IntoView {
+    let trace = format!(
+        "{{
+            'type': 'heatmap',
+            'colorscale': [
+                [0, '#dbdbdb'],
+                [1, '#1F77B4']
+            ],
+            'showscale': false,
+            'z': {:?},
+        }}",
+        heatmap
+    );
+
+    let mut delete_traces = String::from("");
+    if !history.is_empty() {
+        delete_traces = format!("Plotly.deleteTraces('{}', [0]);", div_id)
+    }
+
+    let script = format!(
+        "
+        {}
+        Plotly.addTraces('{}', [{}]);
+        ",
+        delete_traces, div_id, trace
+    );
+    view! {
+        <script type="text/javascript">
+            {script}
+        </script>
+    }
+}
+
 fn set_distribution(checkpoint: &Checkpoint, set_coords: WriteSignal<Vec<SpeciesCoords>>) {
     set_coords.set(checkpoint.species_individuals.clone());
 }
@@ -167,6 +206,7 @@ fn worker_onmessage(
     set_history: WriteSignal<Vec<Checkpoint>>,
     set_progress: WriteSignal<f64>,
     set_coords: WriteSignal<Vec<SpeciesCoords>>,
+    set_heatmap: WriteSignal<Vec<Vec<f64>>>,
 ) -> Closure<dyn Fn(MessageEvent)> {
     // Defines the actions to take when recieving a message from the worker
     Closure::wrap(Box::new(move |msg: MessageEvent| {
@@ -180,6 +220,7 @@ fn worker_onmessage(
                 set_history.update(|h| h.append(&mut response.checkpoints.clone()));
                 set_progress.set(response.checkpoints.last().unwrap().time);
                 set_distribution(response.checkpoints.last().unwrap(), set_coords);
+                set_heatmap.set(response.checkpoints.last().unwrap().heatmap[0].clone())
             }
             WorkerStatus::COMPLETE => {
                 log!("app: simulation completed");
@@ -377,10 +418,11 @@ fn App() -> impl IntoView {
     let (history, set_history) = create_signal::<Vec<Checkpoint>>(vec![]);
     let (species_detail, set_species_detail) = create_signal(0);
     let (checked_species, set_checked_species) = create_signal::<Vec<usize>>(vec![]);
+    let (heatmap, set_heatmap) = create_signal::<Vec<Vec<f64>>>(vec![]);
 
     // set up worker
     let worker = new_worker("worker");
-    let onmessage = worker_onmessage(set_history, set_progress, set_coords);
+    let onmessage = worker_onmessage(set_history, set_progress, set_coords, set_heatmap);
     worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
     onmessage.forget();
     log!("app: worker created");
@@ -433,7 +475,7 @@ fn App() -> impl IntoView {
                 </form>
                 <h3>"Viewer"</h3>
                 <div  id="plotly_chart" style="width=500px"></div>
-                <PlotlyChart div_id=chart_div_id.clone()/>
+                <PlotlyChart div_id=chart_div_id.clone() size=(0.0, 1.0)/>
                 {move || view! {<UpdateChart coords={coords.get()} div_id=chart_div_id.clone()/>}}
                 <h3  style="width: 500px">"Replay"</h3>
                 <form  style="width: 500px" on:input=move |ev| {
@@ -459,6 +501,10 @@ fn App() -> impl IntoView {
                         />}
                     }
                 </form>
+                <h3  style="width: 500px">"Heatmap"</h3>
+                <div  id="plotly_heatmap" style="width=500px"></div>
+                <PlotlyChart div_id={"plotly_heatmap".to_string()} size=(-0.5, 14.5)/>
+                {move || view! {<UpdateHeatmap heatmap={heatmap.get()} div_id={"plotly_heatmap".to_string()} history={history.get()}/>}}
             </div>
         </div>
     }

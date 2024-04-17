@@ -1618,6 +1618,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rawpointer",
+ "serde",
 ]
 
 [[package]]
@@ -1960,6 +1961,7 @@ dependencies = [
  "js-sys",
  "leptos",
  "leptos_meta",
+ "ndarray",
  "ndarray-npy",
  "ndhistogram",
  "plotly",
